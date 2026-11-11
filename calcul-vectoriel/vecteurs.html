@@ -148,7 +148,9 @@ button, input { font: inherit; }
 .stepbar .nav { display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .stepbar .count { font: 600 12px var(--ui); color: var(--ink2); min-width: 72px; text-align: center; }
 .stepbar .btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
-.fb .calc { font-size: 16px; margin: 3px 0 0; padding: 1px 6px; border-radius: 6px; }
+.fb .calcs { font-size: 16px; margin: 3px 0 0; line-height: 1.9; }
+.fb .calc { display: inline-block; padding: 0 6px; border-radius: 6px; line-height: 1.6; }
+.fb .calc.item + .calc.item { margin-left: .8em; }
 .fb .calc.new { background: color-mix(in srgb, var(--accent) 13%, #fff); animation: reveal .35s ease; }
 .fig-tools .btn { font-size: 12.5px; padding: 7px 12px; }
 
@@ -840,7 +842,18 @@ function showStep(i) {
   $('sAgain').onclick = () => showStep(i);
   $('sNext').onclick = () => showStep(i + 1);
   const lines = sol.steps.slice(0, i + 1).map(st => st.write).filter(Boolean);
-  feedback('sol', '▶ Correction', lines.map((l, j) => `<p class="step calc${j === lines.length - 1 ? ' new' : ''}">${l}</p>`).join(''));
+  // Calcul compact, pour laisser la place à la figure (retour à la ligne seulement si la place manque) :
+  // une égalité qui commence par « = » continue la ligne précédente, et les lignes sans « = »
+  // (composantes d'un vecteur, nombre de graduations…) se suivent sur une même ligne.
+  const rows = [], sansEgal = l => !/=/.test(l.replace(/<[^>]+>/g, ''));
+  let prev = null;
+  lines.forEach((l, j) => {
+    const item = sansEgal(l);
+    const html = `<span class="calc${item ? ' item' : ''}${j === lines.length - 1 ? ' new' : ''}">${l}</span>`;
+    if (rows.length && (/^\s*=/.test(l) || (item && prev === 'item'))) rows[rows.length - 1].push(html); else rows.push([html]);
+    prev = item ? 'item' : 'eq';
+  });
+  feedback('sol', '▶ Correction', rows.map(r => `<p class="step calcs">${r.join(' ')}</p>`).join(''));
   play(async () => {
     const S = sol.reset();
     animScale = 0;                           // les étapes déjà vues sont rejouées instantanément
@@ -1088,12 +1101,14 @@ function vectorBoard(o) {
       select(null); o.onChange();
     },
     clearResult() { if (result) { result.g.remove(); result = null; if (sel && sel.isResult) select(null); } },
-    reset() {
+    // notify : prévenir l'exercice (bouton « Tout effacer »), pas lors d'une nouvelle question
+    reset(notify) {
       pieces.splice(0).forEach(p => p.g.remove());
       this.clearResult();
       if (draw) { draw.tmp.remove(); if (draw.pulse) draw.pulse.remove(); draw = null; }
       drag = null; select(null);
       pz.style.opacity = 1;
+      if (notify && o.onChange) o.onChange();
     },
     redraw() { pieces.forEach(render); if (result) render(result); },
     fade(on) { pz.style.opacity = on ? .3 : 1; }
@@ -1115,7 +1130,7 @@ function boardTools(ctx, ui, board, modes) {
   });
   const bFlip = btn('↺ Opposé', 'Retourner le vecteur sélectionné', () => board.flip());
   const bDel = btn('🗑 Supprimer', 'Supprimer le vecteur sélectionné', () => board.remove());
-  btn('✕ Tout effacer', 'Effacer tous tes vecteurs', () => { board.reset(); ctx.changed(); });
+  btn('✕ Tout effacer', 'Effacer tous tes vecteurs', () => { board.reset(true); ctx.changed(); });
   function refresh() {
     for (const m in mb) mb[m].classList.toggle('on', ui.mode === m);
     const s = board.selected;
@@ -1264,6 +1279,8 @@ function latHint(env, q) {
 // fill(réponse) est appelé à la dernière étape
 function latSteps(env, q, fill) {
   const L = env.L, px = m => env.px(m), nm = m => latNameAt(env, m), steps = [];
+  // un point ajouté (ex. F hors du parallélogramme) n'apparaît que lorsque la construction l'atteint
+  const showExtra = (...names) => { if (env.showExtra) names.forEach(n => n && env.showExtra(n)); };
   const items = q.chain.order, byTerm = items.slice().sort((x, y) => x.i - y.i);
   // écriture courante, une entrée par terme de l'énoncé
   const cur = q.terms.map(t => ({ k: t.k, a: t.a, b: t.b }));
@@ -1323,6 +1340,7 @@ function latSteps(env, q, fill) {
           await wait(300);
           await slide(a, px(target), 1500);
           await fadeOut(box);
+          showExtra(na, nb);
         }
       });
     }
@@ -1340,6 +1358,7 @@ function latSteps(env, q, fill) {
     say, write,
     run: async S => {
       Object.values(S.arr).forEach(a => { a.g.style.opacity = .25; });
+      showExtra(sn, en);
       if (q.zero) { const c = px(S0); svgEl('circle', { class: 'join', cx: c[0], cy: c[1], r: 12 }, L.top); await wait(800); return; }
       S.res = arrow(L.top, px(S0), px(S0), { cls: 'res', w: 3.8 });
       await grow(S.res, px(S0), px(end), 1100);
@@ -1750,7 +1769,7 @@ register({
   levels: [['Débutant', 'somme de 2 vecteurs'], ['Moyen', 'avec soustraction'], ['Expert', 'le résultat peut sortir']],
   consigne: () => `<b>ABDC</b> est un parallélogramme dont les diagonales se coupent en <b>E</b>. Calcule la somme.`
     + `<span class="warn"><b>Construis</b> les vecteurs sur la figure et fais-les <b>glisser</b> bout à bout.<br>`
-    + `⚠ Le résultat peut <b>sortir du parallélogramme</b> ! Dans ce cas, un point <b>F</b> est ajouté sur la figure pour que tu puisses l’écrire avec des lettres. `
+    + `⚠ Le résultat peut <b>sortir du parallélogramme</b> ! Si un de tes vecteurs arrive sur un point sans lettre, une lettre (<b>F</b>, puis <b>G</b>…) y apparaît pour que tu puisses écrire le résultat. `
     + `Tape deux lettres (ou 0 pour le vecteur nul), ou choisis « 🎯 Tracer le résultat ». Tout vecteur égal au résultat est accepté.</span>`,
 
   create(ctx) {
@@ -1763,7 +1782,36 @@ register({
     const node = m => ({ key: m.join(), m, px: px(m) });
     const fits = p => { const s = px(p); return s[0] > 22 && s[0] < W - 22 && s[1] > 22 && s[1] < H - 22; };
     const L = layers(svg, ['lat', 'base', 'ghost', 'main', 'pts', 'board', 'top']);
-    env = { lat, letters: ['A', 'B', 'C', 'D', 'E'], px, L };
+    // Lettres ajoutées : elles n'existent pas au départ. Quand un vecteur de l'élève arrive sur un point
+    // sans lettre, ce point reçoit F, puis G… (une place par lettre, pour que les lettres ne changent pas).
+    const BASE = ['A', 'B', 'C', 'D', 'E'], EXTRA = ['F', 'G', 'H', 'I', 'J', 'K'];
+    let slots = [], shown = new Set();
+    env = { lat, letters: BASE.slice(), px, L };
+    function setExtras(list, visible) {
+      EXTRA.forEach(l => delete lat[l]);
+      env.letters = BASE.slice();
+      slots = list.slice(0, EXTRA.length);
+      slots.forEach((m, i) => { if (m) { lat[EXTRA[i]] = m; env.letters.push(EXTRA[i]); } });
+      shown = new Set(visible ? env.letters.filter(l => !BASE.includes(l)) : []);
+      if (q) q.names = q.zero ? [] : (latVecs(env).get(q.r.join()) || []);
+    }
+    function syncExtras() {
+      const ends = [];
+      board.pieces.concat(board.result ? [board.result] : []).forEach(p => ends.push(p.at, add(p.at, p.d)));
+      const libres = ends.filter(m => !BASE.some(l => same(lat[l], m)));
+      const next = slots.map(m => m && libres.some(o => same(o, m)) ? m : null);
+      libres.forEach(m => {
+        if (next.some(s => s && same(s, m))) return;
+        const i = next.indexOf(null);
+        if (i >= 0) next[i] = m; else if (next.length < EXTRA.length) next.push(m);
+      });
+      const avant = JSON.stringify(slots);
+      setExtras(next, true);
+      if (JSON.stringify(slots) !== avant) { drawPoints(); board.redraw(); }
+    }
+    // correction : le point F n'apparaît que lorsque la construction l'atteint
+    env.showExtra = l => { if (EXTRA.includes(l) && lat[l] && !shown.has(l)) { shown.add(l); drawPoints(); } };
+    const hideExtras = () => { if (shown.size) { shown.clear(); drawPoints(); } };
 
     function newShape() {
       b = [rnd(190, 240), rnd(-22, 22)];
@@ -1785,14 +1833,18 @@ register({
         const p = px(lat[u]), r = px(lat[v]);
         svgEl('line', { class: 'diag', x1: p[0], y1: p[1], x2: r[0], y2: r[1] }, L.base);
       });
+      drawPoints();
+      board.redraw();
+    }
+    function drawPoints() {
+      clear(L.pts);
       const centre = px([1, 1]);
-      env.letters.forEach(l => {
+      env.letters.filter(l => BASE.includes(l) || shown.has(l)).forEach(l => {
         const P = px(lat[l]);
         let off = [0, -18];
-        if (l !== 'E') { const d = sub(P, centre), n = Math.hypot(d[0], d[1]); off = [d[0] / n * 22, d[1] / n * 22]; }
-        point(L.pts, P, l, { off, anchor: 'middle', cls: l === 'F' ? 'extra' : '' });
+        if (l !== 'E') { const d = sub(P, centre), n = Math.hypot(d[0], d[1]) || 1; off = [d[0] / n * 22, d[1] / n * 22]; }
+        point(L.pts, P, l, { off, anchor: 'middle', cls: BASE.includes(l) ? '' : 'extra fade-in' });
       });
-      board.redraw();
     }
 
     board = vectorBoard({
@@ -1801,6 +1853,7 @@ register({
       match: (d, at, pieces) => termMatcher(q.terms, t => latVal(env, t.a, t.b), t => lat[t.a])(d, at, pieces),
       label: p => termLabel(p, m => latNameAt(env, m)),
       onChange: () => {
+        syncExtras();
         // résultat tracé entre deux points nommés → ses lettres s'écrivent dans la case
         const r = board.result, i = ctx.q.querySelector('.ans');
         if (r && i) { const a = latNameAt(env, r.at), e = latNameAt(env, add(r.at, r.d)); i.value = a && e ? a + e : ''; }
@@ -1824,15 +1877,10 @@ register({
         cancelAnim();
         board.reset(); board.enabled = true; ui.mode = 'build';
         if (!sameFigure || !b) newShape();
-        delete lat.F; env.letters = ['A', 'B', 'C', 'D', 'E'];
+        q = null; setExtras([], true);
         q = genLatSum(env, options());
-        if (!q.real) {
-          // le résultat sort de la figure : on nomme F l'extrémité de la construction
-          lat.F = add(q.chain.start, q.r);
-          env.letters = env.letters.concat('F');
-          q.names = latVecs(env).get(q.r.join()) || [];
-          q.real = true; q.extra = true;
-        }
+        // le résultat sort de la figure : pas de lettre d'avance, elle apparaîtra quand l'élève y arrivera
+        if (!q.real) { q.real = true; q.extra = true; }
         drawFigure();
         ctx.q.innerHTML = `<span>${termsHTML(q.terms)}</span> <span class="op">=</span> ${VEC_INPUT}`
           + `<span class="qhint">Tape deux lettres, 0, ou trace le résultat sur la figure.</span>`;
@@ -1857,8 +1905,11 @@ register({
       hint() { return latHint(env, q); },
       solve() {
         const inp = ctx.q.querySelector('.ans');
+        // les lettres de l'élève sont retirées ; F = extrémité de la construction de la correction (cachée au départ)
+        setExtras(q.extra ? [add(q.chain.start, q.r)] : [], false);
+        drawPoints(); board.redraw();
         const sol = latSteps(env, q, v => { inp.value = v; inp.classList.remove('bad'); inp.classList.add('good'); });
-        return { steps: sol.steps, reset: () => { board.enabled = false; board.fade(true); return sol.reset(); } };
+        return { steps: sol.steps, reset: () => { board.enabled = false; board.fade(true); hideExtras(); return sol.reset(); } };
       }
     };
   }
