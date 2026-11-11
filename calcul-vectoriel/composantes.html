@@ -1284,20 +1284,23 @@ register({
         return;
       }
       if (q.type === 'tracer') {
-        R.point(L.pts, q.A, 'A');
-        if (tip && !veq(tip, q.A)) R.fleche(L.main, q.A, tip, { color: 'var(--accent)' });
+        R.point(L.pts, q.A, q.lA, tip ? loin(vsub(q.A, tip)) : {});
+        if (tip && !veq(tip, q.A)) { R.fleche(L.main, q.A, tip, { color: COL_TRACE }); R.nom(L.main, q.A, tip, q.nom, COL_TRACE); }
         anneau(R, L.poi, tip || q.A, '#007C74');
         return;
       }
       if (q.type === 'calcul' && !q.vu) { R.base(); R.voile('Calcule d’abord : la figure apparaîtra quand tu vérifies.'); return; }
       R.devoile();
       const d = vsub(q.B, q.A);
-      R.point(L.pts, q.A, q.type === 'lire' ? 'A' : 'A' + coordTxt(q.A), loin(vscl(-1, d)));
-      R.point(L.pts, q.B, q.type === 'lire' ? 'B' : 'B' + coordTxt(q.B), loin(d));
+      R.point(L.pts, q.A, q.type === 'lire' ? q.lA : q.lA + coordTxt(q.A), loin(vscl(-1, d)));
+      R.point(L.pts, q.B, q.type === 'lire' ? q.lB : q.lB + coordTxt(q.B), loin(d));
       if (q.type !== 'calcul') R.fleche(L.main, q.A, q.B, { color: COL_U });
     }
     // étiquette d'un point placée dans le prolongement du vecteur (elle ne gêne pas la flèche ni l'escalier)
     const loin = d => { const [x, y] = unit(vnum(d)); return { off: [x * 13, -y * 13 + 4], anchor: x < -.35 ? 'end' : x > .35 ? 'start' : 'middle' }; };
+    const COL_TRACE = '#007C74';
+    // lettres variées : deux points (pas O, I ni J, réservés au repère) ou une minuscule pour le vecteur
+    const lettres = () => shuffle('ABCDEFGHKLMNPRST'.split('')).slice(0, 2);
     const coordTxt = a => `(${fracTxt(a[0])} ; ${fracTxt(a[1])})`;
 
     /* ---------- mode Explorer ---------- */
@@ -1333,25 +1336,26 @@ register({
           const loin = Math.random() < .6, m = loin ? 16 : 8;
           const A = V(rnd(-m, m), rnd(-m, m)), B = V(rnd(-m, m), rnd(-m, m)), d = vsub(B, A);
           if (!d[0].n || !d[1].n || vlen(d) < 3) continue;
-          const BA = Math.random() < .3;
-          return { type, A, B, BA, nom: BA ? 'BA' : 'AB', r: BA ? vsub(A, B) : d, vu: false };
+          const BA = Math.random() < .3, [lA, lB] = lettres();
+          return { type, A, B, lA, lB, BA, nom: BA ? lB + lA : lA + lB, r: BA ? vsub(A, B) : d, vu: false };
         }
         const d = type === 'norme' ? vecPlein(7, 3) : (Math.random() < .15 ? vecAlea(6) : vecPlein(6, 2));
         const A = V(rnd(-8, 8), rnd(-5, 5)), B = vadd(A, d);
         if (!R.inside(B, 1) || (num(A[0]) === 0 && num(A[1]) === 0)) continue;
-        return { type, A, B, nom: type === 'tracer' ? 'u' : 'AB', r: d };
+        const [lA, lB] = lettres();
+        return { type, A, B, lA, lB, nom: type === 'tracer' ? pick(['u', 'v', 'w', 'a', 'b', 't']) : lA + lB, r: d };
       }
     }
     function poser() {
       tip = null;
       let h;
-      if (q.type === 'lire') h = ligneQ(vec('AB'), '<span class="op">=</span>', cvIn('r', 'AB'));
-      else if (q.type === 'tracer') h = `<span>Trace ${vec('u')} = ${cvF(q.r)} à partir de A</span>`;
-      else if (q.type === 'calcul') h = `<span class="pts">${ptF('A', q.A)} &nbsp; ${ptF('B', q.B)}</span>` + ligneQ(vec(q.nom), '<span class="op">=</span>', cvIn('r', q.nom));
-      else h = ligneQ(vec('AB'), '<span class="op">=</span>', cvIn('r', 'AB'))
-        + ligneQ(normeDe('AB'), '<span class="op">=</span>', `<span class="rac rac-in">√<span>${champ('n', 'nombre sous la racine')}</span></span>`);
+      if (q.type === 'lire') h = ligneQ(vec(q.nom), '<span class="op">=</span>', cvIn('r', q.nom));
+      else if (q.type === 'tracer') h = `<span>Trace ${vec(q.nom)} = ${cvF(q.r)} à partir de ${q.lA}</span>`;
+      else if (q.type === 'calcul') h = `<span class="pts">${ptF(q.lA, q.A)} &nbsp; ${ptF(q.lB, q.B)}</span>` + ligneQ(vec(q.nom), '<span class="op">=</span>', cvIn('r', q.nom));
+      else h = ligneQ(vec(q.nom), '<span class="op">=</span>', cvIn('r', q.nom))
+        + ligneQ(normeDe(q.nom), '<span class="op">=</span>', `<span class="rac rac-in">√<span>${champ('n', 'nombre sous la racine')}</span></span>`);
       ctx.q.innerHTML = h;
-      ctx.tip.innerHTML = q.type === 'tracer' ? 'Fais glisser la pointe depuis A, ou clique sur le nœud où le vecteur doit arriver.'
+      ctx.tip.innerHTML = q.type === 'tracer' ? `Fais glisser la pointe depuis ${q.lA}, ou clique sur le nœud où le vecteur doit arriver.`
         : q.type === 'lire' ? 'Compte les carreaux : horizontalement, puis verticalement.' : '';
       dessiner();
     }
@@ -1394,35 +1398,37 @@ register({
       },
       check() {
         if (q.type === 'tracer') {
-          if (!tip || veq(tip, q.A)) return { empty: true, msg: 'Trace le vecteur : fais glisser sa pointe depuis A.' };
+          if (!tip || veq(tip, q.A)) return { empty: true, msg: `Trace le vecteur : fais glisser sa pointe depuis ${q.lA}.` };
           const rep = vsub(tip, q.A);
-          if (veq(rep, q.r)) return { ok: true, msg: `${vec('u')} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
-          return { msg: erreurType(rep, q.r, 'u')?.replace(/dans l’autre sens.*$/, 'dans l’autre sens</b> : regarde les signes.') || `Ton vecteur a pour composantes ${cvF(rep)}. Il faut ${deplacement(q.r)}.` };
+          if (veq(rep, q.r)) return { ok: true, msg: `${vec(q.nom)} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
+          if (veq(rep, vscl(-1, q.r))) return { msg: 'Bonne longueur, mais <b>dans l’autre sens</b> : regarde les signes des composantes.' };
+          return { msg: erreurType(rep, q.r, q.nom) || `Ton vecteur a pour composantes ${cvF(rep)}. Il faut ${deplacement(q.r)}.` };
         }
         const c = corriger(ctx.q, { rx: q.r[0], ry: q.r[1], ...(q.type === 'norme' ? { n: scal(q.r, q.r) } : {}) });
         if (c.vides.length) return { empty: true, msg: 'Complète toutes les cases.' };
         const rep = lireV(ctx.q, 'r');
-        if (q.type === 'calcul') { q.vu = true; dessiner(); }
+        // on dévoile la figure, à une échelle qui montre les deux points (et la réponse de l'élève)
+        if (q.type === 'calcul') { q.vu = true; R.ajuster([q.A, q.B, ...(rep ? [vadd(q.BA ? q.B : q.A, rep)] : [])]); dessiner(); }
         if (!c.faux.length) {
           if (q.type === 'calcul') R.fleche(L.top, q.BA ? q.B : q.A, q.BA ? q.A : q.B, { color: COL_U }), R.escalier(L.aide, q.BA ? q.B : q.A, q.r);
-          return { ok: true, msg: q.type === 'norme' ? `${normeDe('AB')} = ${normeHTML(scal(q.r, q.r))}` : `${vec(q.nom)} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
+          return { ok: true, msg: q.type === 'norme' ? `${normeDe(q.nom)} = ${normeHTML(scal(q.r, q.r))}` : `${vec(q.nom)} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
         }
         if (!c.faux.includes('rx') && !c.faux.includes('ry')) {
           const n = lire(ctx.q, 'n'), x = q.r[0], y = q.r[1];
           const signes = [fadd(fmul(x, F(Math.abs(x.n), x.d)), fmul(y, F(Math.abs(y.n), y.d)))];
           if (n && signes.some(s => feq(s, n))) return { msg: `Attention : un carré n’est jamais négatif, ${carre(x.n < 0 ? x : y)} = ${fh(fsq(x.n < 0 ? x : y))}.` };
-          return { msg: `Les composantes sont justes. Pour la norme, pense à Pythagore : ${normeDe('AB')}² = x² + y².` };
+          return { msg: `Les composantes sont justes. Pour la norme, pense à Pythagore : ${normeDe(q.nom)}² = x² + y².` };
         }
         if (q.type === 'calcul') montrerReponse(q.BA ? q.B : q.A, rep);
         else if (rep) montrerReponse(q.A, rep);
         const e = rep && erreurType(rep, q.r, q.nom);
-        return { msg: (e || (q.type === 'calcul' ? `Composantes de ${vec(q.nom)} : coordonnées de l’<b>extrémité</b> moins coordonnées de l’<b>origine</b>.` : 'Recompte les carreaux depuis A.'))
+        return { msg: (e || (q.type === 'calcul' ? `Composantes de ${vec(q.nom)} : coordonnées de l’<b>extrémité</b> moins coordonnées de l’<b>origine</b>.` : `Recompte les carreaux depuis ${q.lA}.`))
           + (rep ? ' <span class="sub">Ta réponse est dessinée en pointillés rouges.</span>' : '') };
       },
       hint() {
         if (q.type === 'calcul') return `<p class="step">• ${vec(q.nom)} va de ${q.nom[0]} vers ${q.nom[1]}.</p><p class="step">• Première composante : x<sub>${q.nom[1]}</sub> − x<sub>${q.nom[0]}</sub> (abscisse de l’extrémité moins abscisse de l’origine). Même chose avec les ordonnées.</p>`;
-        if (q.type === 'norme') return `<p class="step">• Lis d’abord les composantes (horizontal, puis vertical).</p><p class="step">• Le vecteur est l’hypoténuse d’un triangle rectangle : ${normeDe('AB')}² = x² + y².</p>`;
-        if (q.type === 'tracer') return `<p class="step">• Depuis A, avance de ${deplacement(q.r)}.</p>`;
+        if (q.type === 'norme') return `<p class="step">• Lis d’abord les composantes (horizontal, puis vertical).</p><p class="step">• Le vecteur est l’hypoténuse d’un triangle rectangle : ${normeDe(q.nom)}² = x² + y².</p>`;
+        if (q.type === 'tracer') return `<p class="step">• Depuis ${q.lA}, avance de ${deplacement(q.r)}.</p>`;
         play(async () => { clear(L.aide); R.escalier(L.aide, q.A, q.r, { cls: 'sans-nb' }); });
         return `<p class="step">• Sur la figure : le déplacement horizontal, puis vertical, en pointillés. Compte les carreaux et regarde le sens (signe).</p>`;
       },
@@ -1433,7 +1439,6 @@ register({
           clear(L.aide, L.main, L.top, L.poi);
           if (q.type === 'calcul') { q.vu = true; R.ajuster([q.A, q.B]); }
           dessiner(); clear(L.main, L.poi);
-          if (q.type === 'tracer') R.point(L.pts, q.A, 'A');
           return {};
         };
         const horiz = { say: `Déplacement <b>horizontal</b> : ${r[0].n ? deplacement([r[0], F(0)]) : 'aucun'}.`, write: `horizontal : ${fh(r[0])}`,
@@ -1443,7 +1448,7 @@ register({
         const fin = (say, write, extra) => ({ say, write, run: async S => {
           clear(L.aide); R.escalier(L.aide, dep, r);
           await grow(R.fleche(L.top, dep, dep, { color: COL_U, w: 3.4 }), R.px(dep), R.px(arr), 700);
-          if (q.type === 'tracer') tip = q.B; else { remplir(ctx.q, 'rx', r[0]); remplir(ctx.q, 'ry', r[1]); }
+          if (q.type === 'tracer') { tip = q.B; R.nom(L.top, q.A, q.B, q.nom, COL_U); } else { remplir(ctx.q, 'rx', r[0]); remplir(ctx.q, 'ry', r[1]); }
           if (extra) await extra(S);
         } });
         if (q.type === 'calcul') {
@@ -1454,18 +1459,18 @@ register({
           steps.push(Object.assign(vert, { write: `y<sub>${q.nom[1]}</sub> − y<sub>${q.nom[0]}</sub> = ${fh(arr[1])} − ${fp(dep[1])} = ${fh(r[1])}` }));
           steps.push(fin(`On vérifie sur la figure : ${deplacement(r)}.`, `${vec(q.nom)} = ${cvF(r)}`));
         } else if (q.type === 'tracer') {
-          steps.push({ say: `${vec('u')} = ${cvF(r)} : on part de A.`, write: null, run: async () => { svgEl('circle', { class: 'origin-pulse', cx: R.px(q.A)[0], cy: R.px(q.A)[1], r: 10 }, L.aide); await wait(600); } });
+          steps.push({ say: `${vec(q.nom)} = ${cvF(r)} : on part de ${q.lA}.`, write: null, run: async () => { svgEl('circle', { class: 'origin-pulse', cx: R.px(q.A)[0], cy: R.px(q.A)[1], r: 10 }, L.aide); await wait(600); } });
           steps.push(Object.assign(horiz, { write: null }), Object.assign(vert, { write: null }));
-          steps.push(fin(`On relie A au point d’arrivée : c’est un représentant de ${vec('u')}.`, `${vec('u')} = ${cvF(r)} : ${deplacement(r)}`, async () => dessiner()));
+          steps.push(fin(`On relie ${q.lA} au point d’arrivée : c’est un représentant de ${vec(q.nom)}.`, `${vec(q.nom)} = ${cvF(r)} : ${deplacement(r)}`, async () => dessiner()));
         } else {
           steps.push(horiz, vert);
-          steps.push(fin(`Les composantes de ${vec('AB')}.`, `${vec('AB')} = ${cvF(r)}`));
+          steps.push(fin(`Les composantes de ${vec(q.nom)}.`, `${vec(q.nom)} = ${cvF(r)}`));
           if (q.type === 'norme') {
             steps.push({ say: `Le vecteur est l’<b>hypoténuse</b> d’un triangle rectangle : on applique Pythagore.`,
-              write: `${normeDe('AB')}² = ${carre(r[0])} + ${carre(r[1])} = ${fh(fsq(r[0]))} + ${fh(fsq(r[1]))} = ${fh(n2)}`,
+              write: `${normeDe(q.nom)}² = ${carre(r[0])} + ${carre(r[1])} = ${fh(fsq(r[0]))} + ${fh(fsq(r[1]))} = ${fh(n2)}`,
               run: async () => { R.angleDroit(L.aide, vadd(q.A, [r[0], F(0)]), [fneg(r[0]), F(0)], [F(0), r[1]]); await wait(600); } });
             steps.push({ say: `La norme est la racine carrée : valeur exacte, puis valeur arrondie.`,
-              write: `${normeDe('AB')} = ${normeHTML(n2)}`,
+              write: `${normeDe(q.nom)} = ${normeHTML(n2)}`,
               run: async () => { remplir(ctx.q, 'n', n2); await wait(300); } });
           }
         }
