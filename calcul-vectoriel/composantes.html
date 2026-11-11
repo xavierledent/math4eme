@@ -1001,12 +1001,13 @@ const vnul = a => a[0].n === 0 && a[1].n === 0;
 const vnum = a => [num(a[0]), num(a[1])];
 const vlen = a => Math.hypot(num(a[0]), num(a[1]));
 const fsq = a => fmul(a, a);
-const det = (a, b) => fsub(fmul(a[0], b[1]), fmul(b[0], a[1]));       // x₁·y₂ − x₂·y₁
-const scal = (a, b) => fadd(fmul(a[0], b[0]), fmul(a[1], b[1]));      // x₁·x₂ + y₁·y₂
+const det = (a, b) => fsub(fmul(a[0], b[1]), fmul(b[0], a[1]));       // xu·yv − xv·yu
+const scal = (a, b) => fadd(fmul(a[0], b[0]), fmul(a[1], b[1]));      // xu·xv + yu·yv
 const fint = a => a.d === 1;
 
 /* ---------- notation ---------- */
-const X1 = 'x<sub>1</sub>', Y1 = 'y<sub>1</sub>', X2 = 'x<sub>2</sub>', Y2 = 'y<sub>2</sub>';
+// notation du cours : composantes de u et de v
+const XU = 'x<sub>u</sub>', YU = 'y<sub>u</sub>', XV = 'x<sub>v</sub>', YV = 'y<sub>v</sub>';
 const fh = f => fracHTML(fr(f));                         // −3/2 en fraction HTML
 const fp = f => paren(fr(f));                            // entre parenthèses si négatif
 const cvF = a => cv(a[0], a[1]);                         // colonne de composantes
@@ -1766,7 +1767,7 @@ register({
 
 /* =====================================================================
    Outil 2, onglet 3 : vecteurs colinéaires (p. 11-13)
-   critère x₁·y₂ = x₂·y₁ et écriture v = k·u ; trouver a ; points alignés
+   critère xu·yv = xv·yu et écriture v = k·u ; trouver a ; points alignés
    ===================================================================== */
 // composante connue (fraction) ou inconnue 'a'
 const ent = x => x === 'a' ? '<i>a</i>' : fh(x);
@@ -1794,16 +1795,16 @@ register({
   id: 'c3', title: 'Vecteurs colinéaires', short: 'Colinéaires',
   accent: '#EC6708', bg: '#FDF1E7',
   explorer: 'fais tourner v',
-  levels: [['Le test', `${X1}·${Y2} = ${X2}·${Y1} ?`], ['Trouver a', 'équation à résoudre'], ['Alignés ?', 'trois points']],
+  levels: [['Le test', `${XU}·${YV} = ${XV}·${YU} ?`], ['Trouver a', 'équation à résoudre'], ['Alignés ?', 'trois points']],
   newLabel: () => null,
   nextLabel: lv => lv === 0 ? '↻ Nouveaux défis' : null,
   consigne: lv => [
-    `Fais glisser la pointe de ${vec('v')}. Compare les deux produits ${X1}·${Y2} et ${X2}·${Y1}, puis relève les défis.`
-      + `<span class="warn">${vec('u')}${cvS(X1, Y1)} et ${vec('v')}${cvS(X2, Y2)} sont colinéaires quand ${X1}·${Y2} = ${X2}·${Y1}, c’est-à-dire quand ${vec('v')} = k${vec('u')}.</span>`,
+    `Fais glisser la pointe de ${vec('v')}. Compare les deux produits ${XU}·${YV} et ${XV}·${YU}, puis relève les défis.`
+      + `<span class="warn">${vec('u')}${cvS(XU, YU)} et ${vec('v')}${cvS(XV, YV)} sont colinéaires quand ${XU}·${YV} = ${XV}·${YU}, c’est-à-dire quand ${vec('v')} = k${vec('u')}.</span>`,
     `Fais le test des produits, puis réponds. S’ils sont colinéaires, trouve k tel que ${vec('v')} = k${vec('u')}.`
-      + `<span class="warn">Colinéaires ⟺ ${X1}·${Y2} = ${X2}·${Y1}. La figure n’apparaît qu’après ta réponse.</span>`,
+      + `<span class="warn">Colinéaires ⟺ ${XU}·${YV} = ${XV}·${YU}. La figure n’apparaît qu’après ta réponse.</span>`,
     `Trouve le nombre <i>a</i> pour que ${vec('u')} et ${vec('v')} soient colinéaires.`
-      + `<span class="warn">Écris l’égalité ${X1}·${Y2} = ${X2}·${Y1} et résous-la. Fractions avec / (ex. <b>5/2</b>).</span>`,
+      + `<span class="warn">Écris l’égalité ${XU}·${YV} = ${XV}·${YU} et résous-la. Fractions avec / (ex. <b>5/2</b>).</span>`,
     `Les points A, B et C sont-ils alignés ? Calcule ${vec('AB')} et ${vec('AC')}, puis fais le test.`
       + `<span class="warn">A, B, C alignés ⟺ ${vec('AB')} et ${vec('AC')} colinéaires. La figure n’apparaît qu’après ta réponse.</span>`
   ][lv],
@@ -1837,8 +1838,8 @@ register({
       else concl = `<span class="non">Différents : pas colinéaires.</span>`;
       document.getElementById('live').innerHTML =
         `<div>${vec('u')} = ${cvF(u)} &nbsp; ${vec('v')} = ${cvF(v)}</div>`
-        + `<div class="gros">${X1}·${Y2} = ${prod(u[0], v[1])} = <b>${fh(p1)}</b></div>`
-        + `<div class="gros">${X2}·${Y1} = ${prod(v[0], u[1])} = <b>${fh(p2)}</b></div>`
+        + `<div class="gros">${XU}·${YV} = ${prod(u[0], v[1])} = <b>${fh(p1)}</b></div>`
+        + `<div class="gros">${XV}·${YU} = ${prod(v[0], u[1])} = <b>${fh(p2)}</b></div>`
         + `<div>${concl}</div>`;
       clear(L.aide, L.main, L.pts, L.poi);
       R.droite(L.aide, Pv, u);
@@ -1902,7 +1903,7 @@ register({
       let h;
       if (q.type === 'test') {
         h = `<span class="pts">${vec('u')} = ${cvF(q.u)} &nbsp; ${vec('v')} = ${cvF(q.v)}</span>`
-          + ligneQ(`${X1}·${Y2} =`, champ('p1', 'produit x1 fois y2'), `&nbsp; ${X2}·${Y1} =`, champ('p2', 'produit x2 fois y1'))
+          + ligneQ(`${XU}·${YV} =`, champ('p1', 'produit x u fois y v'), `&nbsp; ${XV}·${YU} =`, champ('p2', 'produit x v fois y u'))
           + ligneQ('<span class="petit">Colinéaires ?</span>', ouiNon('c', 'Colinéaires ?'))
           + `<span class="ligne k-ligne" hidden>${vec('v')} = ${champ('k', 'k')} ${vec('u')}</span>`;
       } else if (q.type === 'a') {
@@ -1957,9 +1958,9 @@ register({
           if (c.vides.length || !ch) return { empty: true, msg: 'Complète les deux produits et choisis Oui ou Non' + (ch === 'oui' ? ', puis k.' : '.') };
           const bonCh = (ch === 'oui') === !!q.k; marquerChoix(ctx.q, 'c', bonCh);
           reveler();
-          if (c.faux.includes('p1') || c.faux.includes('p2')) return { msg: `Recalcule les produits : ${X1}·${Y2} = ${prod(q.u[0], q.v[1])} et ${X2}·${Y1} = ${prod(q.v[0], q.u[1])}.` };
+          if (c.faux.includes('p1') || c.faux.includes('p2')) return { msg: `Recalcule les produits : ${XU}·${YV} = ${prod(q.u[0], q.v[1])} et ${XV}·${YU} = ${prod(q.v[0], q.u[1])}.` };
           if (!bonCh) return { msg: feq(p1, p2) ? 'Les deux produits sont <b>égaux</b> : les vecteurs sont donc colinéaires.' : 'Les deux produits sont <b>différents</b> : les vecteurs ne sont pas colinéaires, même s’ils en ont l’air !' };
-          if (c.faux.includes('k')) return { msg: `${vec('v')} = k${vec('u')} : chaque composante de ${vec('v')} est k fois celle de ${vec('u')}, donc k = ${frS(X2, X1)}.` };
+          if (c.faux.includes('k')) return { msg: `${vec('v')} = k${vec('u')} : chaque composante de ${vec('v')} est k fois celle de ${vec('u')}, donc k = ${frS(XV, XU)}.` };
           return { ok: true, msg: q.k ? `Colinéaires : ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}. Sur la figure, ${vec('v')} est parallèle à ${vec('u')}.`
             : `Pas colinéaires : ${fh(p1)} ≠ ${fh(p2)}. Sur la figure, ${vec('v')} sort de la direction de ${vec('u')}${degres(q.u, q.v) < 12 || degres(q.u, q.v) > 168 ? ' — de très peu : à l’œil, on aurait pu se tromper !' : '.'}` };
         }
@@ -1969,7 +1970,7 @@ register({
           if (!c.faux.length) { q.trouve = true; dessiner(); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('u')} = ${cvF(q.u)} et ${vec('v')} = ${cvF(q.v)} sont parallèles.` }; }
           const ar = lire(ctx.q, 'a');
           if (ar) { const e = q.e[1].map(x => x === 'a' ? ar : x); if (q.e[1].includes('a') && !vnul(e)) dessiner(e); }
-          return { msg: `Avec cette valeur, les vecteurs ne sont pas colinéaires${q.e[1].includes('a') ? ' (ton vecteur en rouge)' : ''}. Écris ${X1}·${Y2} = ${X2}·${Y1} en remplaçant par les nombres.` };
+          return { msg: `Avec cette valeur, les vecteurs ne sont pas colinéaires${q.e[1].includes('a') ? ' (ton vecteur en rouge)' : ''}. Écris ${XU}·${YV} = ${XV}·${YU} en remplaçant par les nombres.` };
         }
         const c = corriger(ctx.q, { abx: q.AB[0], aby: q.AB[1], acx: q.AC[0], acy: q.AC[1] }), ch = choixDe(ctx.q, 'c');
         if (c.vides.length || !ch) return { empty: true, msg: 'Complète les composantes et choisis Oui ou Non.' };
@@ -1980,8 +1981,8 @@ register({
         return { ok: true, msg: q.colin ? 'A, B et C sont alignés : C est sur la droite AB.' : 'Pas alignés : C n’est pas sur la droite AB. Sur la figure, l’écart est minuscule : seul le calcul permet d’en être sûr.' };
       },
       hint() {
-        if (q.type === 'test') return `<p class="step">• ${X1}·${Y2} : première composante de ${vec('u')} fois deuxième de ${vec('v')}.</p><p class="step">• Si les deux produits sont égaux, les vecteurs sont colinéaires.</p>`;
-        if (q.type === 'a') return `<p class="step">• Remplace dans ${X1}·${Y2} = ${X2}·${Y1} : ${fois(q.e[0][0], q.e[1][1])} = ${fois(q.e[1][0], q.e[0][1])}.</p><p class="step">• Puis résous l’équation.</p>`;
+        if (q.type === 'test') return `<p class="step">• ${XU}·${YV} : première composante de ${vec('u')} fois deuxième de ${vec('v')}.</p><p class="step">• Si les deux produits sont égaux, les vecteurs sont colinéaires.</p>`;
+        if (q.type === 'a') return `<p class="step">• Remplace dans ${XU}·${YV} = ${XV}·${YU} : ${fois(q.e[0][0], q.e[1][1])} = ${fois(q.e[1][0], q.e[0][1])}.</p><p class="step">• Puis résous l’équation.</p>`;
         return `<p class="step">• ${vec('AB')} = ${cvS('x<sub>B</sub> − x<sub>A</sub>', 'y<sub>B</sub> − y<sub>A</sub>')}, de même pour ${vec('AC')}.</p><p class="step">• Puis teste si ${vec('AB')} et ${vec('AC')} sont colinéaires.</p>`;
       },
       solve() {
@@ -1989,8 +1990,8 @@ register({
         const reset = () => { if (q.type !== 'a') q.vu = false; dessiner(); clear(L.main, L.aide); return {}; };
         if (q.type === 'test') {
           const p1 = fmul(q.u[0], q.v[1]), p2 = fmul(q.v[0], q.u[1]);
-          steps.push({ say: `On multiplie la première composante de ${vec('u')} par la deuxième de ${vec('v')}.`, write: `${X1}·${Y2} = ${prod(q.u[0], q.v[1])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
-          steps.push({ say: `Puis la première de ${vec('v')} par la deuxième de ${vec('u')}.`, write: `${X2}·${Y1} = ${prod(q.v[0], q.u[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
+          steps.push({ say: `On multiplie la première composante de ${vec('u')} par la deuxième de ${vec('v')}.`, write: `${XU}·${YV} = ${prod(q.u[0], q.v[1])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
+          steps.push({ say: `Puis la première de ${vec('v')} par la deuxième de ${vec('u')}.`, write: `${XV}·${YU} = ${prod(q.v[0], q.u[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
           steps.push({
             say: q.k ? `Les produits sont égaux : ${vec('u')} et ${vec('v')} sont colinéaires.` : `Les produits sont différents : ${vec('u')} et ${vec('v')} ne sont pas colinéaires.`,
             write: q.k ? `${fh(p1)} = ${fh(p2)} : colinéaires` : `${fh(p1)} ≠ ${fh(p2)} : pas colinéaires`,
@@ -2005,7 +2006,7 @@ register({
           });
           if (q.k) steps.push({
             say: `${vec('v')} = k${vec('u')} : on cherche par combien multiplier ${vec('u')}. On étire ${vec('u')}…`,
-            write: `k = ${frS(X2, X1)} = ${frS(fh(q.v[0]), fh(q.u[0]))} = ${fh(q.k)} &nbsp; ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}`,
+            write: `k = ${frS(XV, XU)} = ${frS(fh(q.v[0]), fh(q.u[0]))} = ${fh(q.k)} &nbsp; ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}`,
             run: async () => {
               const Pv = q.P[1], a = R.fleche(L.top, Pv, vadd(Pv, q.u), { color: COL_U, w: 2.4 });
               await wait(300);
@@ -2016,7 +2017,7 @@ register({
         } else if (q.type === 'a') {
           const [u, v] = q.e, x1 = u[0], y1 = u[1], x2 = v[0], y2 = v[1];
           const gauche = q.pos === 0 || q.pos === 3;     // l'inconnue est dans x1·y2
-          steps.push({ say: 'Colinéaires : les produits en croix sont égaux.', write: `${X1}·${Y2} = ${X2}·${Y1}`, run: () => wait(400) });
+          steps.push({ say: 'Colinéaires : les produits en croix sont égaux.', write: `${XU}·${YV} = ${XV}·${YU}`, run: () => wait(400) });
           steps.push({ say: 'On remplace par les composantes.', write: `${fois(x1, y2)} = ${fois(x2, y1)}`, run: () => wait(400) });
           steps.push({ say: 'On calcule le produit connu.', write: gauche ? `${coefA(q.c)} = ${fh(q.n)}` : `${fh(q.n)} = ${coefA(q.c)}`, run: () => wait(400) });
           steps.push({ say: `On divise par ${fh(q.c)}.`, write: `<i>a</i> = ${frS(fh(q.n), fh(q.c))} = ${fh(q.a)}`,
@@ -2051,7 +2052,7 @@ register({
 
 /* =====================================================================
    Outil 2, onglet 4 : vecteurs orthogonaux (p. 14-16)
-   critère x₁·x₂ + y₁·y₂ = 0 ; construire un vecteur orthogonal ; trouver a
+   critère xu·xv + yu·yv = 0 ; construire un vecteur orthogonal ; trouver a
    ===================================================================== */
 register({
   id: 'c4', title: 'Vecteurs orthogonaux', short: 'Orthogonaux',
@@ -2061,13 +2062,13 @@ register({
   newLabel: () => null,
   nextLabel: lv => lv === 0 ? '↻ Nouveaux défis' : null,
   consigne: lv => [
-    `Fais glisser la pointe de ${vec('v')}. Observe les produits ${X1}·${X2} et ${Y1}·${Y2} et leur somme, puis relève les défis.`,
+    `Fais glisser la pointe de ${vec('v')}. Observe les produits ${XU}·${XV} et ${YU}·${YV} et leur somme, puis relève les défis.`,
     `Calcule les deux produits, puis dis si les vecteurs sont orthogonaux.`
-      + `<span class="warn">Orthogonaux ⟺ ${X1}·${X2} + ${Y1}·${Y2} = 0. La figure n’apparaît qu’après ta réponse.</span>`,
+      + `<span class="warn">Orthogonaux ⟺ ${XU}·${XV} + ${YU}·${YV} = 0. La figure n’apparaît qu’après ta réponse.</span>`,
     `Donne les composantes d’un vecteur ${vec('v')} <b>non nul</b> orthogonal à ${vec('u')}.`
       + `<span class="warn">Il y a beaucoup de bonnes réponses : toutes sont acceptées.</span>`,
     `Trouve le nombre <i>a</i> pour que ${vec('u')} et ${vec('v')} soient orthogonaux.`
-      + `<span class="warn">Écris ${X1}·${X2} + ${Y1}·${Y2} = 0 et résous l’équation. Fractions avec / (ex. <b>5/2</b>).</span>`
+      + `<span class="warn">Écris ${XU}·${XV} + ${YU}·${YV} = 0 et résous l’équation. Fractions avec / (ex. <b>5/2</b>).</span>`
   ][lv],
 
   create(ctx) {
@@ -2112,8 +2113,8 @@ register({
       const { u, v, S } = D, p1 = fmul(u[0], v[0]), p2 = fmul(u[1], v[1]), s = fadd(p1, p2);
       document.getElementById('live').innerHTML =
         `<div>${vec('u')} = ${cvF(u)} &nbsp; ${vec('v')} = ${cvF(v)}</div>`
-        + `<div class="gros">${X1}·${X2} = ${prod(u[0], v[0])} = <b>${fh(p1)}</b></div>`
-        + `<div class="gros">${Y1}·${Y2} = ${prod(u[1], v[1])} = <b>${fh(p2)}</b></div>`
+        + `<div class="gros">${XU}·${XV} = ${prod(u[0], v[0])} = <b>${fh(p1)}</b></div>`
+        + `<div class="gros">${YU}·${YV} = ${prod(u[1], v[1])} = <b>${fh(p2)}</b></div>`
         + `<div>Somme : ${fh(p1)} + ${fp(p2)} = <b>${fh(s)}</b> → ${vnul(v) ? 'vecteur nul' : s.n ? '<span class="non">pas orthogonaux</span>' : '<span class="oui">orthogonaux</span>'}</div>`;
       clear(L.aide, L.main, L.pts, L.poi);
       paire(S, u, v, !vnul(v) && !s.n ? COL_W : COL_V);
@@ -2155,7 +2156,7 @@ register({
     function poser() {
       let h;
       if (q.type === 'test') h = `<span class="pts">${vec('u')} = ${cvF(q.u)} &nbsp; ${vec('v')} = ${cvF(q.v)}</span>`
-        + ligneQ(`${X1}·${X2} =`, champ('p1', 'produit x1 fois x2'), `&nbsp; ${Y1}·${Y2} =`, champ('p2', 'produit y1 fois y2'))
+        + ligneQ(`${XU}·${XV} =`, champ('p1', 'produit x u fois x v'), `&nbsp; ${YU}·${YV} =`, champ('p2', 'produit y u fois y v'))
         + ligneQ('<span class="petit">Orthogonaux ?</span>', ouiNon('c', 'Orthogonaux ?'));
       else if (q.type === 'construire') h = `<span class="pts">${vec('u')} = ${cvF(q.u)}</span>` + ligneQ(vec('v'), '=', cvIn('r', 'v'));
       else h = `<span class="pts">${vec('u')} = ${cvA(q.e[0])} &nbsp; ${vec('v')} = ${cvA(q.e[1])}</span>` + ligneQ('<i>a</i> =', champ('a', 'a'));
@@ -2190,7 +2191,7 @@ register({
           if (c.vides.length || !ch) return { empty: true, msg: 'Complète les deux produits et choisis Oui ou Non.' };
           const bonCh = (ch === 'oui') === q.ortho; marquerChoix(ctx.q, 'c', bonCh);
           q.vu = true; dessiner();
-          if (c.faux.length) return { msg: `Recalcule : ${X1}·${X2} = ${prod(q.u[0], q.v[0])} et ${Y1}·${Y2} = ${prod(q.u[1], q.v[1])}.` };
+          if (c.faux.length) return { msg: `Recalcule : ${XU}·${XV} = ${prod(q.u[0], q.v[0])} et ${YU}·${YV} = ${prod(q.u[1], q.v[1])}.` };
           if (!bonCh) return { msg: `${fh(p1)} + ${fp(p2)} = ${fh(fadd(p1, p2))} : ${q.ortho ? 'la somme est nulle, ils <b>sont</b> orthogonaux.' : 'la somme n’est pas nulle, ils ne sont <b>pas</b> orthogonaux (regarde l’angle sur la figure).'}` };
           return { ok: true, msg: q.ortho ? `${fh(p1)} + ${fp(p2)} = 0 : orthogonaux, l’angle est droit.` : `${fh(p1)} + ${fp(p2)} = ${fh(fadd(p1, p2))} ≠ 0 : pas orthogonaux (angle ≈ ${Math.round(degres(q.u, q.v))}°).` };
         }
@@ -2203,18 +2204,18 @@ register({
           if (vnul(v)) return { msg: 'Le vecteur nul ne compte pas : cherche un vecteur non nul.' };
           if (ok) { q.v = v; dessiner(null, true); } else dessiner(v);
           if (ok) return { ok: true, msg: `${prod(q.u[0], v[0])} + ${prod(q.u[1], v[1])} = 0 : orthogonaux. <span class="sub">Il y en a une infinité : par exemple ${cvF(V(fneg(q.u[1]), q.u[0]))} et tous ses multiples.</span>` };
-          return { msg: `${prod(q.u[0], v[0])} + ${prod(q.u[1], v[1])} = ${fh(scal(q.u, v))} ≠ 0. Cherche ${X2} et ${Y2} pour que les deux produits soient <b>opposés</b>.` };
+          return { msg: `${prod(q.u[0], v[0])} + ${prod(q.u[1], v[1])} = ${fh(scal(q.u, v))} ≠ 0. Cherche ${XV} et ${YV} pour que les deux produits soient <b>opposés</b>.` };
         }
         const c = corriger(ctx.q, { a: q.a });
         if (c.vides.length) return { empty: true, msg: 'Écris la valeur de a.' };
         if (!c.faux.length) { dessiner(null, true); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('v')} = ${cvF(q.v)} est orthogonal à ${vec('u')}.` }; }
         const ar = lire(ctx.q, 'a');
         if (ar) { const e = q.e[1].map(x => x === 'a' ? ar : x); if (!vnul(e)) dessiner(e); }
-        return { msg: `Avec cette valeur, l’angle n’est pas droit (ton vecteur en rouge). Remplace dans ${X1}·${X2} + ${Y1}·${Y2} = 0.` };
+        return { msg: `Avec cette valeur, l’angle n’est pas droit (ton vecteur en rouge). Remplace dans ${XU}·${XV} + ${YU}·${YV} = 0.` };
       },
       hint() {
-        if (q.type === 'test') return `<p class="step">• ${X1}·${X2} : premières composantes multipliées ; ${Y1}·${Y2} : deuxièmes composantes multipliées.</p><p class="step">• Orthogonaux si leur somme vaut 0.</p>`;
-        if (q.type === 'construire') return `<p class="step">• Il faut ${fp(q.u[0])}·${X2} + ${fp(q.u[1])}·${Y2} = 0.</p><p class="step">• Essaie d’échanger les composantes de ${vec('u')} et de changer un des deux signes.</p>`;
+        if (q.type === 'test') return `<p class="step">• ${XU}·${XV} : premières composantes multipliées ; ${YU}·${YV} : deuxièmes composantes multipliées.</p><p class="step">• Orthogonaux si leur somme vaut 0.</p>`;
+        if (q.type === 'construire') return `<p class="step">• Il faut ${fp(q.u[0])}·${XV} + ${fp(q.u[1])}·${YV} = 0.</p><p class="step">• Essaie d’échanger les composantes de ${vec('u')} et de changer un des deux signes.</p>`;
         return `<p class="step">• Remplace : ${fois(q.e[0][0], q.e[1][0])} + ${fois(q.e[0][1], q.e[1][1])} = 0.</p><p class="step">• Puis résous l’équation.</p>`;
       },
       solve() {
@@ -2222,8 +2223,8 @@ register({
         const reset = () => { if (q.type === 'test') q.vu = false; dessiner(); return {}; };
         if (q.type === 'test') {
           const p1 = fmul(q.u[0], q.v[0]), p2 = fmul(q.u[1], q.v[1]), s = fadd(p1, p2);
-          steps.push({ say: 'On multiplie les premières composantes.', write: `${X1}·${X2} = ${prod(q.u[0], q.v[0])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
-          steps.push({ say: 'On multiplie les deuxièmes composantes.', write: `${Y1}·${Y2} = ${prod(q.u[1], q.v[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
+          steps.push({ say: 'On multiplie les premières composantes.', write: `${XU}·${XV} = ${prod(q.u[0], q.v[0])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
+          steps.push({ say: 'On multiplie les deuxièmes composantes.', write: `${YU}·${YV} = ${prod(q.u[1], q.v[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
           steps.push({
             say: s.n ? 'La somme n’est pas nulle : les vecteurs ne sont pas orthogonaux.' : 'La somme est nulle (les produits sont opposés) : les vecteurs sont orthogonaux.',
             write: `${fh(p1)} + ${fp(p2)} = ${fh(s)} : ${s.n ? 'pas orthogonaux' : 'orthogonaux'}`,
@@ -2251,7 +2252,7 @@ register({
           steps.push({ say: 'On vérifie avec le test : la somme des produits est nulle.', write: `${prod(q.u[0], w[0])} + ${prod(q.u[1], w[1])} = ${fh(fmul(q.u[0], w[0]))} + ${fp(fmul(q.u[1], w[1]))} = 0`, run: () => wait(400) });
         } else {
           const [u, v] = q.e;
-          steps.push({ say: 'Orthogonaux : la somme des produits est nulle.', write: `${X1}·${X2} + ${Y1}·${Y2} = 0`, run: () => wait(400) });
+          steps.push({ say: 'Orthogonaux : la somme des produits est nulle.', write: `${XU}·${XV} + ${YU}·${YV} = 0`, run: () => wait(400) });
           steps.push({ say: 'On remplace par les composantes.', write: `${fois(u[0], v[0])} + ${fois(u[1], v[1])} = 0`, run: () => wait(400) });
           const termeA = coefA(q.c), autre = q.n;
           steps.push({ say: 'On calcule le produit connu.', write: q.pos === 2 ? `${termeA} + ${fp(autre)} = 0` : `${fh(autre)} + ${termeA} = 0`, run: () => wait(400) });
