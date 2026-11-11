@@ -779,20 +779,20 @@ function openEx(id) {
 function startLevel(lv) {
   const m = App.m;
   cancelAnim();
-  if (lv === 0 && !m.decouverte) lv = 1;
+  if (lv === 0 && !m.explorer) lv = 1;
   App.level[m.id] = lv; storeSet(App.key + '.levels', App.level);
   $('levels').innerHTML = '';
-  // niveau 0 (facultatif) : « Découvrir », manipulation libre avec de petits défis, sans vérification
-  const niveaux = (m.decouverte ? [[0, '🔍', 'Découvrir', m.decouverte]] : [])
+  // niveau 0 (facultatif) : « Explorer », manipulation libre avec de petits défis, sans vérification
+  const niveaux = (m.explorer ? [[0, '🔍', 'Explorer', m.explorer]] : [])
     .concat(m.levels.map(([name, sub], i) => [i + 1, '●'.repeat(i + 1), 'Niveau ' + (i + 1), sub || name]));
   niveaux.forEach(([n, dots, nom, sub]) => {
     const b = document.createElement('button');
-    b.className = 'lvl' + (n === lv ? ' on' : '') + (n === 0 ? ' decouvrir' : '');
+    b.className = 'lvl' + (n === lv ? ' on' : '') + (n === 0 ? ' explorer' : '');
     b.innerHTML = `<span class="dots">${dots}</span>${nom}<small>${sub}</small>`;
     b.onclick = () => startLevel(n);
     $('levels').appendChild(b);
   });
-  document.body.classList.toggle('mode-decouverte', lv === 0);
+  document.body.classList.toggle('mode-explorer', lv === 0);
   $('consigne').innerHTML = m.consigne(lv);
   const nl = m.newLabel ? m.newLabel(lv) : '⟳ Nouvelle figure';
   $('bNew').style.display = nl ? '' : 'none';
@@ -822,7 +822,7 @@ function setState() {
   $('bHint').disabled = App.solved;
   $('bNext').classList.toggle('pulse', App.solved);
   const s = App.score[App.m.id + '.' + App.level[App.m.id]] || 0;
-  if (App.level[App.m.id] === 0) { $('score').innerHTML = 'Mode découverte : manipule librement, rien n’est noté.'; return; }
+  if (App.level[App.m.id] === 0) { $('score').innerHTML = 'Mode Explorer : manipule librement, rien n’est noté.'; return; }
   $('score').innerHTML = s ? `Réussies à ce niveau : <b>${s}</b>` : 'Chaque question est tirée au hasard : recommence autant que tu veux !';
 }
 function doCheck() {
