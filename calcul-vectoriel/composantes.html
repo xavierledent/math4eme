@@ -1654,7 +1654,7 @@ register({
   id: 'c2', title: 'Calculer avec les composantes', short: 'Calculer',
   accent: '#A00058', bg: '#F9EDF3',
   explorer: 'multiplier, additionner',
-  levels: [['Somme', 'u + v, u − v, 2u…'], ['Fractions', 'coefficients fractionnaires'], ['Points', 'milieu, parallélogramme']],
+  levels: [['Somme', 'coefficients entiers'], ['Fractions', 'coefficients fractionnaires'], ['Points', 'milieu, parallélogramme']],
   newLabel: () => null,
   nextLabel: lv => lv === 0 ? '↻ Autres vecteurs' : null,
   consigne: lv => [
@@ -1808,6 +1808,36 @@ register({
       vecLabel(g, [0, 0], nom, color);
       if (coef) svgText(g, -8, 0, coef, { class: 'lbl', 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: color });
       placerNom(g, a, b, autreCote ? -1 : 1);
+      return g;
+    }
+    // nom de la combinaison demandée (« 2u − v », « ½u + 3v ») le long du résultat
+    function nomCombo(layer, a, b) {
+      const col = COL_RES, g = svgEl('g', { class: 'nom-vec' }, layer);
+      let x = 0;
+      [[q.a, 'u'], [q.b, 'v']].filter(([k]) => k.n).forEach(([k, nom], i) => {
+        const abs = F(Math.abs(k.n), k.d);
+        const txt = (s, dx) => { svgText(g, x, 0, s, { class: 'lbl', 'dominant-baseline': 'middle', fill: col }); x += dx; };
+        if (i) { x += 6; txt(k.n < 0 ? MINUS : '+', 16); }            // opérateur entre deux espaces
+        else if (k.n < 0) txt(MINUS, 10);
+        if (!feq(abs, F(1))) txt(fracTxt(abs), fracTxt(abs).length * 8 + 2);
+        vecLabel(g, [x + 5, 0], nom, col); x += 14;
+      });
+      placerNom(g, a, b, 0);
+      return g;
+    }
+    // vecteur en pixels (y vers le bas)
+    const pxv = w => { const a = R.px([0, 0]), b = R.px(w); return [b[0] - a[0], b[1] - a[1]]; };
+    // une flèche passe, en un seul mouvement, de (p0, w0) à (p1, w1) : elle glisse, tourne d'un demi-tour
+    // si elle se retourne (demiTour), et s'allonge ou se raccourcit
+    function transformer(A, p0, w0, p1, w1, demiTour, ms) {
+      const a0 = Math.atan2(w0[1], w0[0]), l0 = Math.hypot(...w0), l1 = Math.hypot(...w1);
+      let a1 = Math.atan2(w1[1], w1[0]);
+      if (demiTour) a1 = a0 + Math.PI;                       // toujours dans le même sens de rotation
+      else { while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI; while (a0 - a1 > Math.PI) a1 += 2 * Math.PI; }
+      return tween(ms, t => {
+        const p = lerp(p0, p1, t), an = a0 + (a1 - a0) * t, l = l0 + (l1 - l0) * t;
+        A.set(p, [p[0] + l * Math.cos(an), p[1] + l * Math.sin(an)]);
+      });
     }
     // « u + v » ou « u − v » le long du résultat
     function nomSomme(layer, a, b, neg) {
@@ -1927,8 +1957,10 @@ register({
     function dessiner(hRep) {
       clear(L.aide, L.main, L.pts, L.top);
       if (q.type === 'combo') {
-        R.fleche(L.main, q.Pu, vadd(q.Pu, q.u), { color: COL_U }); R.nom(L.main, q.Pu, vadd(q.Pu, q.u), 'u', COL_U);
-        R.fleche(L.main, q.Pv, vadd(q.Pv, q.v), { color: COL_V }); R.nom(L.main, q.Pv, vadd(q.Pv, q.v), 'v', COL_V);
+        R.fleche(L.main, q.Pu, vadd(q.Pu, q.u), { color: COL_U });
+        R.fleche(L.main, q.Pv, vadd(q.Pv, q.v), { color: COL_V });
+        nomCoef(L.main, q.Pu, vadd(q.Pu, q.u), '', COL_U, 'u');
+        nomCoef(L.main, q.Pv, vadd(q.Pv, q.v), '', COL_V, 'v');
       } else if (q.type === 'milieu') {
         svgEl('line', Object.assign({ class: 'seg' }, xyAttrs(R.px(q.A), R.px(q.B))), L.aide);
         R.point(L.pts, q.A, 'A' + coordT(q.A)); R.point(L.pts, q.B, 'B' + coordT(q.B));
@@ -1951,14 +1983,60 @@ register({
       ctx.tip.innerHTML = q.type === 'combo' ? `Les vecteurs ${vec('u')} et ${vec('v')} sont dessinés pour t’aider à vérifier.` : 'Après ta réponse, ton point est placé sur la figure.';
       dessiner();
     }
+    // indice construit à partir de la question : quoi faire avec chaque terme, le gabarit du calcul
+    // avec la notation du cours (x<sub>u</sub>…), et une mise en garde sur les signes seulement si elle sert
+    function indiceCombo() {
+      const termes = [[q.a, 'u', q.u, XU, YU], [q.b, 'v', q.v, XV, YV]].filter(([k]) => k.n);
+      const p = [];
+      termes.forEach(([k, nom], j) => {
+        const N = vec(nom), abs = F(Math.abs(k.n), k.d);
+        // deuxième terme précédé de « − » : on parle de soustraire (le gabarit écrit déjà « − x_v »)
+        if (j && k.n < 0) {
+          if (feq(abs, F(1))) p.push(`${MINUS}&thinsp;${N} : tu <b>soustrais</b> les composantes de ${N}.`);
+          else p.push(`${MINUS}&thinsp;${coefHTML(abs)}${N} : multiplie chaque composante de ${N} par ${fh(abs)}, puis <b>soustrais</b>.`);
+          return;
+        }
+        if (feq(k, F(1))) p.push(`${N} : garde ses composantes telles quelles.`);
+        else if (feq(k, F(-1))) p.push(`${MINUS}${N} : change le signe des <b>deux</b> composantes de ${N}.`);
+        else if (abs.d > 1 && abs.n === 1) p.push(`${coefHTML(k)}${N} : multiplie <b>chacune</b> des deux composantes de ${N} par ${fh(k)} (c’est-à-dire divise par ${abs.d}${k.n < 0 ? ' et change le signe' : ''}).`);
+        else p.push(`${coefHTML(k)}${N} : multiplie <b>chacune</b> des deux composantes de ${N} par ${fh(k)}.`);
+      });
+      // gabarit : « 2·x_u − x_v »
+      const gabarit = i => termes.map(([k, , , x, y], j) => {
+        const abs = F(Math.abs(k.n), k.d), c = feq(abs, F(1)) ? '' : `${fh(abs)}&thinsp;·&thinsp;`;
+        return (j ? (k.n < 0 ? ` ${MINUS} ` : ' + ') : (k.n < 0 ? MINUS : '')) + c + (i ? y : x);
+      }).join('');
+      if (termes.length === 2) p.push(`Puis assemble, composante par composante. Première : ${gabarit(0)}. Deuxième : ${gabarit(1)}.`);
+      else p.push(`Première composante : ${gabarit(0)}. Deuxième : ${gabarit(1)}.`);
+      // mises en garde utiles
+      termes.forEach(([k, nom, w, x, y], j) => {
+        if (k.n >= 0) return;
+        const neg = [[w[0], x], [w[1], y]].filter(([c]) => c.n < 0).map(([, n]) => n);
+        if (!neg.length) return;
+        const quoi = neg.join(' et ') + (neg.length > 1 ? ' sont négatifs' : ' est négatif');
+        if (j) p.push(`Attention : ${quoi}, et soustraire un nombre négatif revient à ajouter : 4 ${MINUS} (${MINUS}3) = 4 + 3.`);
+        else p.push(`Attention : ${quoi}, et le produit de deux nombres négatifs est positif : (${MINUS}2)&thinsp;·&thinsp;(${MINUS}1) = 2.`);
+      });
+      return p.map(t => `<p class="step">• ${t}</p>`).join('');
+    }
     const attendu = () => q.type === 'combo' ? q.r : q.type === 'milieu' ? q.M : q.H;
 
     // la réponse de l'élève, en rouge, sur la figure
     function montrer(rep) {
       clear(L.top);
       if (q.type === 'combo') {
+        // toujours visible : le cadre s'élargit si la réponse sort de la figure
         const fin = vadd(q.S, rep);
-        if (R.inside(fin)) { R.point(L.top, q.S, ''); R.fleche(L.top, q.S, fin, { color: 'var(--ko)', cls: 'ghost' }); }
+        R.base();
+        if (!R.inside(fin)) R.ajuster([q.S, fin, q.Pu, vadd(q.Pu, q.u), q.Pv, vadd(q.Pv, q.v)]);
+        dessiner();
+        R.point(L.top, q.S, '', { cls: 'faux' });
+        if (!vnul(rep)) {
+          R.fleche(L.top, q.S, fin, { color: 'var(--ko)', w: 3 });
+          const g = svgEl('g', { class: 'nom-vec' }, L.top);
+          svgText(g, 0, 0, 'ta réponse', { class: 'lbl', 'dominant-baseline': 'middle', fill: 'var(--ko)' });
+          placerNom(g, q.S, fin, 0);
+        }
         return;
       }
       if (!R.inside(rep)) return;
@@ -1988,7 +2066,12 @@ register({
         const rep = lireV(ctx.q, 'r');
         if (!c.faux.length) {
           clear(L.top);
-          if (q.type === 'combo') R.fleche(L.top, q.S, vadd(q.S, q.r), { cls: 'res', w: 3.4 });
+          if (q.type === 'combo') {
+            R.base(); dessiner();
+            R.point(L.pts, q.S, '');
+            R.fleche(L.top, q.S, vadd(q.S, q.r), { cls: 'res', w: 3.4 });
+            nomCombo(L.top, q.S, vadd(q.S, q.r));
+          }
           else R.point(L.top, bon, q.type === 'milieu' ? 'M' : 'H', { cls: 'sol', r: 6 });
           if (q.type === 'para') svgEl('path', { class: 'quad', d: q.ordre.split('').map(n => R.px(n === 'H' ? q.H : q[n])).map((p, i) => (i ? 'L' : 'M') + p).join('') + 'Z' }, L.aide);
           return { ok: true, msg: q.type === 'combo' ? `${comboHTML(q.a, q.b)} = ${cvF(q.r)}` : `${q.type === 'milieu' ? 'M' : 'H'}${coordF(bon)}` };
@@ -1998,8 +2081,10 @@ register({
         if (q.type === 'combo') {
           const sans = vadd(vscl(q.a, q.u), vscl(fneg(q.b), q.v));
           if (q.b.n && veq(rep, sans)) msg = `Attention au signe devant ${vec('v')}.`;
-          else msg = `Calcule <b>composante par composante</b> : ${fh(q.a)}&thinsp;·&thinsp;${fp(q.u[0])} ${q.b.n ? `+ ${fp(q.b)}&thinsp;·&thinsp;${fp(q.v[0])}` : ''} pour la première.`;
-          msg += ' <span class="sub">Ta réponse, dessinée en pointillés rouges, ne coïncide pas avec la construction.</span>';
+          else if (!c.faux.includes('rx')) msg = 'La première composante est juste, pas la deuxième.';
+          else if (!c.faux.includes('ry')) msg = 'La deuxième composante est juste, pas la première.';
+          else msg = 'Les deux composantes sont fausses. Calcule <b>composante par composante</b> : les premières ensemble, puis les deuxièmes.';
+          msg += ' <span class="sub">Ta réponse est dessinée en rouge à partir du point de départ.</span>';
         } else if (q.type === 'milieu') {
           msg = veq(rep, vsub(q.B, q.A)) || veq(rep, vadd(q.A, q.B)) ? 'Les coordonnées du milieu : la <b>moyenne</b> des coordonnées, (x<sub>A</sub> + x<sub>B</sub>) ÷ 2.'
             : 'Ton point (en rouge) n’est pas au milieu de [AB].';
@@ -2007,33 +2092,55 @@ register({
         return { msg };
       },
       hint() {
-        if (q.type === 'combo') return `<p class="step">• Multiplie chaque composante : ${fh(F(2))}&thinsp;·&thinsp;${cvS('x', 'y')} = ${cvS('2x', '2y')}.</p><p class="step">• Puis additionne les premières composantes ensemble, et les deuxièmes ensemble.</p>`;
+        if (q.type === 'combo') return indiceCombo();
         if (q.type === 'milieu') return `<p class="step">• Abscisse du milieu : x<sub>M</sub> = ${frS('x<sub>A</sub> + x<sub>B</sub>', '2')}. Même chose pour l’ordonnée.</p>`;
         return `<p class="step">• Dans un parallélogramme, les côtés opposés sont représentés par des <b>vecteurs égaux</b>.</p><p class="step">• ${q.ordre === 'EFGH' ? `${vec('EH')} = ${vec('FG')} : pars de E et déplace-toi comme de F à G.` : `${vec('GH')} = ${vec('EF')} : pars de G et déplace-toi comme de E à F.`}</p>`;
       },
       solve() {
         const steps = [];
-        const reset = () => { dessiner(); return {}; };
+        let reset = () => { dessiner(); return {}; };
         if (q.type === 'combo') {
+          // les vecteurs de l'énoncé se déplacent eux-mêmes : chacun glisse (et se retourne, s'allonge…)
+          // jusqu'à sa place dans la construction, puis le résultat apparaît, avec son nom
           const au = vscl(q.a, q.u), bv = vscl(q.b, q.v), mid = vadd(q.S, au);
-          const terme = (k, w, nom, col, de, fin) => ({
-            say: feq(k, F(1)) ? `On garde ${vec(nom)} tel quel.` : feq(k, F(-1)) ? `${MINUS}${vec(nom)} : on change le signe des deux composantes.` : `${coefHTML(k)}${vec(nom)} : on multiplie <b>chaque</b> composante par ${fh(k)}.`,
+          reset = () => {
+            R.base(); clear(L.aide, L.main, L.pts, L.top);
+            const S = {};
+            S.u = { A: R.fleche(L.main, q.Pu, vadd(q.Pu, q.u), { color: COL_U }), de: q.Pu, w: q.u };
+            S.v = { A: R.fleche(L.main, q.Pv, vadd(q.Pv, q.v), { color: COL_V }), de: q.Pv, w: q.v };
+            S.u.nom = nomCoef(L.top, q.Pu, vadd(q.Pu, q.u), '', COL_U, 'u');
+            S.v.nom = nomCoef(L.top, q.Pv, vadd(q.Pv, q.v), '', COL_V, 'v');
+            return S;
+          };
+          const coefTxt = k => feq(k, F(1)) ? '' : feq(k, F(-1)) ? MINUS : fracTxt(k);
+          const terme = (k, w, nom, col, de) => ({
+            say: feq(k, F(1)) ? `${vec(nom)} glisse ${de === q.S ? 'au point de départ' : `au bout de ${coefHTML(q.a)}${vec('u')}`}, tel quel.`
+              : feq(k, F(-1)) ? `${MINUS}${vec(nom)} : ${vec(nom)} glisse ${de === q.S ? 'au point de départ' : `au bout de ${coefHTML(q.a)}${vec('u')}`} et <b>se retourne</b>. On change le signe des deux composantes.`
+              : `${coefHTML(k)}${vec(nom)} : ${vec(nom)} glisse ${de === q.S ? 'au point de départ' : `au bout de ${coefHTML(q.a)}${vec('u')}`}${k.n < 0 ? ', <b>se retourne</b>' : ''} et devient ${Math.abs(num(k)) > 1 ? `${fh(F(Math.abs(k.n), k.d))} fois plus long` : `${fh(F(k.d, Math.abs(k.n)))} fois plus court`}. On multiplie <b>chaque</b> composante par ${fh(k)}.`,
             write: feq(k, F(1)) ? `${vec(nom)} = ${cvF(w)}` : `${coefHTML(k)}${vec(nom)} = ${kfois(k, w)} = ${cvF(vscl(k, w))}`,
-            run: async () => {
-              const g = svgEl('g', {}, L.aide);
-              R.fleche(g, de, vadd(de, w), { color: col, cls: 'ghost', w: 2.2 });
-              await wait(350);
-              await grow(R.fleche(L.main, de, de, { color: col, w: 3.2 }), R.px(de), R.px(fin), 900);
-              await fadeOut(g);
+            run: async S => {
+              const o = S[nom];
+              o.nom.remove();
+              await transformer(o.A, R.px(o.de), pxv(o.w), R.px(de), pxv(vscl(k, w)), k.n < 0, 1200);
+              // copies de w mises bout à bout (k entier) : des jalons
+              const sg = k.n > 0 ? 1 : -1;
+              for (let j = 1; j < Math.abs(num(k)) - 1e-9; j++) {
+                const P = R.px(vadd(de, vscl(sg * j, w)));
+                svgEl('circle', { class: 'jalon fade-in', cx: P[0], cy: P[1], r: 4, style: `--c:${col}` }, L.top);
+              }
+              o.de = de; o.w = vscl(k, w);
+              o.nom = nomCoef(L.top, de, vadd(de, o.w), coefTxt(k), col, nom);
             }
           });
-          if (q.a.n) steps.push(terme(q.a, q.u, 'u', COL_U, q.S, mid));
-          if (q.b.n) steps.push(terme(q.b, q.v, 'v', COL_V, mid, vadd(q.S, q.r)));
+          if (q.a.n) steps.push(terme(q.a, q.u, 'u', COL_U, q.S));
+          if (q.b.n) steps.push(terme(q.b, q.v, 'v', COL_V, q.a.n ? mid : q.S));
           steps.push({
-            say: q.a.n && q.b.n ? 'On met les deux vecteurs bout à bout et on additionne composante par composante.' : 'Voici le résultat.',
+            say: q.a.n && q.b.n ? `Les deux vecteurs sont bout à bout : ${comboHTML(q.a, q.b)} va du point de départ jusqu’au bout. On additionne composante par composante.` : 'Voici le résultat.',
             write: q.a.n && q.b.n ? `${comboHTML(q.a, q.b)} = ${cvF(au)} + ${cvF(bv)} = ${cvF(q.r)}` : null,
             run: async () => {
+              R.point(L.pts, q.S, '');
               await grow(R.fleche(L.top, q.S, q.S, { cls: 'res', w: 3.6 }), R.px(q.S), R.px(vadd(q.S, q.r)), 900);
+              nomCombo(L.top, q.S, vadd(q.S, q.r));
               remplir(ctx.q, 'rx', q.r[0]); remplir(ctx.q, 'ry', q.r[1]);
             }
           });
