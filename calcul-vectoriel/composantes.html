@@ -342,6 +342,17 @@ svg.fig.tient { cursor: grabbing; }
 .fig .voile-ic { font-size: 34px; }
 .fig .voile-txt { font: 600 15px var(--ui); fill: var(--ink2); }
 .fig .norme-ok { fill: var(--ok); }
+/* Explorer de « Calculer » : choix Multiplier / Additionner, jalons, origine de v */
+.explo-haut { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px; margin-bottom: 6px; }
+.explo-haut .reglages { margin: 0; }
+.sous-modes { display: flex; border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; }
+.sous-modes button { font: 600 15px var(--ui); border: 0; background: #fff; color: var(--ink2); padding: 6px 16px; cursor: pointer; }
+.sous-modes button + button { border-left: 1.5px solid var(--line); }
+.sous-modes button.on { background: var(--accent); color: #fff; }
+.retourner { font: 600 15px var(--ui); border: 1.5px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); padding: 5px 14px; cursor: pointer; }
+.retourner:hover { border-color: var(--accent); }
+.fig .jalon { fill: #fff; stroke: var(--c); stroke-width: 2.4; }
+.fig .origine-v { fill: #fff; stroke: var(--c); stroke-width: 2.4; }
 
 /* @PLEIN-ECRAN:CSS début : module partagé, repris par 4eme/src/build.mjs */
 .pe-voile { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
@@ -1636,15 +1647,18 @@ const comboHTML = (a, b, nu = 'u', nv = 'v') => termsHTML([{ k: fr(a), a: nu, b:
 // « 2·(3 ; −1) » avec la colonne de composantes
 const kfois = (k, w) => (feq(fr(k), F(1)) ? '' : feq(fr(k), F(-1)) ? MINUS : fh(k) + '&thinsp;') + cvF(w);
 
+// exploration choisie (Multiplier / Additionner), gardée tant que la page est ouverte
+let explo2Mode = 'mult';
+
 register({
   id: 'c2', title: 'Calculer avec les composantes', short: 'Calculer',
   accent: '#A00058', bg: '#F9EDF3',
-  explorer: 'a u + b v',
+  explorer: 'multiplier, additionner',
   levels: [['Somme', 'u + v, u − v, 2u…'], ['Fractions', 'coefficients fractionnaires'], ['Points', 'milieu, parallélogramme']],
   newLabel: () => null,
   nextLabel: lv => lv === 0 ? '↻ Autres vecteurs' : null,
   consigne: lv => [
-    `Change les nombres <b>a</b> et <b>b</b> avec les boutons − et +. Observe la construction de a${vec('u')} + b${vec('v')} et le calcul de ses composantes, puis relève les défis.`,
+    `<b>Multiplie</b> un vecteur par un nombre, ou <b>additionne</b> deux vecteurs : observe la figure et le calcul, puis relève les défis.`,
     `Calcule les composantes du vecteur demandé.`
       + `<span class="warn">On calcule <b>composante par composante</b> : les premières ensemble, les deuxièmes ensemble.</span>`,
     `Calcule les composantes du vecteur demandé.`
@@ -1658,59 +1672,207 @@ register({
     const L = layers(ctx.svg, ['aide', 'main', 'pts', 'top']);
     let q = null, D = null, defis;
 
-    /* ---------- mode Explorer ---------- */
-    // u et v fixés ; l'élève règle a et b (de −3 à 3, par demi)
+    /* ---------- mode Explorer : deux explorations séparées ---------- */
+    //  × Multiplier : un vecteur u (pointe déplaçable) et un nombre k ; on voit k·u
+    //  + Additionner : u et v ; l'élève glisse v au bout de u, u + v apparaît ; « Retourner v » donne u − v
     function explorer() {
-      let u, v, ok = false;
-      while (!ok) {
-        u = V(nz(-4, 4), nz(-3, 3)); v = V(nz(-4, 4), nz(-3, 3));
-        if (!det(u, v).n || vlen(u) < 2 || vlen(v) < 2) continue;
-        ok = demis().some(([a, b]) => a && b && !fadd(fmul(a, u[1]), fmul(b, v[1])).n);   // défi 3 possible
-      }
-      const S = V(-1, -1);
-      const cible = (a, b) => vadd(S, vadd(vscl(a, u), vscl(b, v)));
-      const tire = list => { for (;;) { const [a, b] = list(); const T = cible(a, b); if (R.inside(T, 1) && !veq(T, S)) return T; } };
-      const T1 = tire(() => [pick([F(2), F(-1), F(3), F(-2)]), pick([F(1), F(-1), F(2)])]);
-      const T2 = tire(() => [pick([F(1, 2), F(-1, 2), F(3, 2), F(-3, 2)]), pick([F(1), F(-1), F(2), F(1, 2)])]);
-      D = { u, v, S, a: F(1), b: F(1) };
-      const res = () => vadd(vscl(D.a, u), vscl(D.b, v));
+      const mode = explo2Mode;
+      ctx.q.innerHTML = `<div class="explo">`
+        + `<div class="explo-haut"><div class="sous-modes" role="group" aria-label="Que veux-tu explorer ?">`
+        + `<button type="button" data-m="mult" class="${mode === 'mult' ? 'on' : ''}">× Multiplier</button>`
+        + `<button type="button" data-m="add" class="${mode === 'add' ? 'on' : ''}">+ Additionner</button></div>`
+        + `<span id="reglage"></span></div><div class="live" id="live"></div><div id="defis"></div></div>`;
+      ctx.q.querySelectorAll('.sous-modes button').forEach(b => b.onclick = () => {
+        if (b.dataset.m === explo2Mode) return;
+        explo2Mode = b.dataset.m; R.base(); explorer();
+      });
+      if (mode === 'mult') initMult(); else initAdd();
+      document.getElementById('defis').innerHTML = defisHTML(defis);
+      maj();
+    }
+    // petit vecteur, le plus souvent avec deux composantes non nulles
+    const petit = (mx, my) => Math.random() < .2 ? (Math.random() < .5 ? V(nz(-mx, mx), 0) : V(0, nz(-my, my))) : V(nz(-mx, mx), nz(-my, my));
+
+    // --- Multiplier ---
+    function initMult() {
+      R.cadre(-12, 12, -8, 8);
+      const u = V(nz(-3, 3), nz(-2, 2)), S = V(pick([-2, -1, 1, 2]), pick([-1, 1]));
+      let T;                                               // cible du dernier défi : c·w
+      do { T = vscl(pick([2, 3, -2, -3]), petit(2, 2)); } while (Math.abs(num(T[0])) > 8 || Math.abs(num(T[1])) > 6);
+      D = { mode: 'mult', S, u, k: F(2), T };
+      const ku = () => vscl(D.k, D.u), k = () => D.k;
       defis = [
-        { txt: 'Atteins l’étoile ★ : trouve a et b.', T: T1, test: () => veq(vadd(S, res()), T1) },
-        { txt: 'Atteins la nouvelle étoile ★ (un des nombres est une fraction).', T: T2, test: () => veq(vadd(S, res()), T2) },
-        { txt: `Rends a${vec('u')} + b${vec('v')} <b>horizontal</b> (et non nul).`, test: () => !res()[1].n && res()[0].n }
+        { txt: `<b>3 fois plus long</b>, même sens.`, test: () => feq(k(), F(3)) },
+        { txt: `<b>Sens contraire</b>, même longueur.`, test: () => feq(k(), F(-1)) },
+        { txt: `<b>2 fois plus court</b>, même sens.`, test: () => feq(k(), F(1, 2)) },
+        { txt: `Obtiens k${vec('u')} = ${cvF(T)}, avec k ≠ 1 (déplace aussi la pointe de ${vec('u')}).`, test: () => !feq(k(), F(1)) && veq(ku(), T) }
       ];
-      const pas = k => `<span class="pas"><button type="button" data-k="${k}" data-d="-1" aria-label="diminuer ${k}">−</button><b id="v${k}"></b><button type="button" data-k="${k}" data-d="1" aria-label="augmenter ${k}">+</button></span>`;
-      ctx.q.innerHTML = `<div class="explo"><div class="reglages">a = ${pas('a')} &nbsp; b = ${pas('b')}</div><div class="live" id="live"></div>${defisHTML(defis)}</div>`;
+      document.getElementById('reglage').innerHTML = `<span class="reglages">k = ${pas('k')}</span>`;
+      brancherPas();
+      ctx.tip.innerHTML = `En trait fin : ${vec('u')}. En trait épais : k${vec('u')}, à partir du même point. Tu peux faire glisser la pointe de ${vec('u')}.`;
+    }
+    function majMult() {
+      const { S, u, k } = D, r = vscl(k, u), ak = F(Math.abs(k.n), k.d);
+      const kTxt = feq(k, F(1)) ? '' : feq(k, F(-1)) ? MINUS : fracTxt(k);
+      const effet = !k.n ? 'C’est le <b>vecteur nul</b>.'
+        : (feq(ak, F(1)) ? 'Même longueur que ' + vec('u')
+          : feq(ak, F(1, 2)) ? '<b>2 fois plus court</b> que ' + vec('u')
+          : `<b>${fh(ak)} fois plus long</b> que ${vec('u')}`)
+          + (k.n > 0 ? ', <b>même sens</b>.' : ', <b>sens contraire</b>.');
+      document.getElementById('live').innerHTML =
+        `<div class="gros">${fh(k)}&thinsp;${vec('u')} = ${fh(k)}&thinsp;·&thinsp;${cvF(u)} = ${cvS(`${fh(k)}&thinsp;·&thinsp;${fp(u[0])}`, `${fh(k)}&thinsp;·&thinsp;${fp(u[1])}`)} = <b>${cvF(r)}</b></div>`
+        + `<div>${effet}</div>`;
+      clear(L.aide, L.main, L.pts, L.top);
+      // k·u en trait épais, u par-dessus en trait fin : les deux restent visibles quand ils se superposent
+      if (!vnul(r)) {
+        R.fleche(L.main, S, vadd(S, r), { color: COL_V, w: 5.5 });
+        // jalons : k·u est fait de copies de u mises bout à bout
+        const sg = k.n > 0 ? 1 : -1;
+        for (let j = 1; j < Math.abs(num(k)) - 1e-9; j++) {
+          const P = R.px(vadd(S, vscl(sg * j, u)));
+          svgEl('circle', { class: 'jalon', cx: P[0], cy: P[1], r: 4, style: `--c:${COL_V}` }, L.top);
+        }
+      }
+      R.fleche(L.top, S, vadd(S, u), { color: COL_U, w: 2.2 });
+      R.point(L.pts, S, '');
+      anneau(R, L.pts, vadd(S, u), COL_U);
+      // les noms en dernier : ils évitent toutes les flèches déjà dessinées
+      if (!vnul(r)) nomCoef(L.top, S, vadd(S, r), kTxt, COL_V, 'u');
+      nomCoef(L.top, S, vadd(S, u), '', COL_U, 'u', true);
+    }
+
+    // --- Additionner ---
+    function initAdd() {
+      let u, v, S, Pv;
+      for (;;) {
+        u = petit(4, 3); v = petit(4, 3);
+        if (!det(u, v).n) continue;                         // pas parallèles : la somme se voit mieux
+        S = V(rnd(-8, 2), rnd(-4, 4)); Pv = V(rnd(-8, 8), rnd(-5, 5));
+        const fin = vadd(S, u);
+        if (![S, fin, vadd(fin, v), Pv, vadd(Pv, v)].every(p => R.inside(p, 1))) continue;
+        if (vlen(vsub(Pv, fin)) < 3 || vlen(vsub(Pv, S)) < 2) continue;   // v ne commence pas déjà au bout de u
+        break;
+      }
+      D = { mode: 'add', S, u, v, Pv, neg: false };
+      const w = () => D.neg ? vscl(-1, D.v) : D.v, place = () => veq(D.Pv, vadd(D.S, D.u)), r = () => vadd(D.u, w());
+      defis = [
+        { txt: `Place ${vec('v')} <b>au bout de</b> ${vec('u')} (glisse son origine).`, test: () => place() },
+        { txt: `Rends ${vec('u')} + ${vec('v')} <b>horizontal</b>.`, test: () => place() && !D.neg && !r()[1].n && r()[0].n },
+        { txt: `Rends ${vec('u')} + ${vec('v')} <b>nul</b>.`, test: () => place() && !D.neg && vnul(r()) },
+        { txt: `Retourne ${vec('v')} et place-le au bout de ${vec('u')} : ${vec('u')} − ${vec('v')}.`, test: () => place() && D.neg }
+      ];
+      document.getElementById('reglage').innerHTML = `<button type="button" class="retourner">⇄ Retourner ${vec('v')}</button>`;
+      ctx.q.querySelector('.retourner').onclick = () => {
+        // le vecteur se retourne sur place : son origine devient sa pointe
+        D.Pv = vadd(D.Pv, w()); D.neg = !D.neg; maj();
+      };
+      ctx.tip.innerHTML = `Fais glisser ${vec('v')} par son origine (le rond). Tu peux aussi déplacer les pointes de ${vec('u')} et de ${vec('v')}.`;
+    }
+    function majAdd() {
+      const { S, u, v, Pv, neg } = D, w = neg ? vscl(-1, v) : v, r = vadd(u, w), fin = vadd(S, u), place = veq(Pv, fin);
+      const op = neg ? MINUS : '+', nomR = `${vec('u')} ${op} ${vec('v')}`, nomW = (neg ? MINUS : '') + vec('v');
+      document.getElementById('live').innerHTML =
+        `<div>${vec('u')} = ${cvF(u)} &nbsp; ${vec('v')} = ${cvF(v)}</div>`
+        + `<div class="gros">${nomR}${neg ? ` = ${vec('u')} + (${nomW})` : ''} = ${cvS(`${fh(u[0])} ${op} ${fp(v[0])}`, `${fh(u[1])} ${op} ${fp(v[1])}`)} = <b>${cvF(r)}</b></div>`
+        + `<div>${place ? `${nomR} va de l’origine de ${vec('u')} à la pointe de ${nomW}.`
+          : `Place ${nomW} au bout de ${vec('u')} pour voir ${nomR} sur la figure.`}</div>`;
+      clear(L.aide, L.main, L.pts, L.top);
+      if (place) {
+        // pas d'escalier ici : la figure reste lisible, le calcul à côté montre l'addition des composantes
+        if (!vnul(r)) R.fleche(L.top, S, vadd(S, r), { cls: 'res', w: 3.6 });
+      }
+      R.fleche(L.main, S, fin, { color: COL_U });
+      if (!vnul(w)) R.fleche(L.main, Pv, vadd(Pv, w), { color: COL_V });
+      R.point(L.pts, S, '');
+      anneau(R, L.pts, fin, COL_U); anneau(R, L.pts, vadd(Pv, w), COL_V);
+      const O = R.px(Pv);
+      svgEl('circle', { class: 'origine-v', cx: O[0], cy: O[1], r: 7, style: `--c:${COL_V}` }, L.pts);
+      // les noms en dernier : ils évitent toutes les flèches déjà dessinées (le résultat d'abord, c'est le plus long)
+      if (place && !vnul(r)) nomSomme(L.top, S, vadd(S, r), neg);
+      nomCoef(L.top, S, fin, '', COL_U, 'u');
+      if (!vnul(w)) nomCoef(L.top, Pv, vadd(Pv, w), neg ? MINUS : '', COL_V, 'v');
+    }
+
+    // --- commun ---
+    const pas = k => `<span class="pas"><button type="button" data-k="${k}" data-d="-1" aria-label="diminuer ${k}">−</button><b id="v${k}"></b><button type="button" data-k="${k}" data-d="1" aria-label="augmenter ${k}">+</button></span>`;
+    function brancherPas() {
       ctx.q.querySelectorAll('.pas button').forEach(b => b.onclick = () => {
         const k = b.dataset.k, n = fadd(D[k], F(+b.dataset.d, 2));
         if (Math.abs(num(n)) <= 3) { D[k] = n; maj(); }
       });
-      ctx.tip.innerHTML = `En pointillés : ${vec('u')} et ${vec('v')}. En couleur : a${vec('u')}, puis b${vec('v')} au bout, et le résultat.`;
-      maj();
     }
-    function demis() { const l = []; for (let a = -6; a <= 6; a++) for (let b = -6; b <= 6; b++) l.push([F(a, 2), F(b, 2)]); return l; }
+    // nom d'un vecteur avec un coefficient devant (« u », « 3u », « −v »), le long de sa flèche
+    // (autreCote : de préférence sous la flèche plutôt qu'au-dessus)
+    function nomCoef(layer, a, b, coef, color, nom, autreCote = false) {
+      const g = svgEl('g', { class: 'nom-vec' }, layer);
+      vecLabel(g, [0, 0], nom, color);
+      if (coef) svgText(g, -8, 0, coef, { class: 'lbl', 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: color });
+      placerNom(g, a, b, autreCote ? -1 : 1);
+    }
+    // « u + v » ou « u − v » le long du résultat
+    function nomSomme(layer, a, b, neg) {
+      const col = COL_RES, g = svgEl('g', { class: 'nom-vec' }, layer);
+      vecLabel(g, [-18, 0], 'u', col);
+      svgText(g, 0, 0, neg ? MINUS : '+', { class: 'lbl', 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: col });
+      vecLabel(g, [18, 0], 'v', col);
+      placerNom(g, a, b, 0);
+    }
+    // place le groupe g à l'endroit le plus dégagé le long de la flèche a → b : des deux côtés, à plusieurs
+    // hauteurs, sans couvrir une flèche, un nom, un point ou une poignée, et dans le cadre
+    function placerNom(g, a, b, pref) {
+      const P = R.px(a), Q = R.px(b), dx = Q[0] - P[0], dy = Q[1] - P[1], Lg = Math.hypot(dx, dy) || 1;
+      let nx = -dy / Lg, ny = dx / Lg;
+      if (ny > 0 || (Math.abs(ny) < .01 && nx < 0)) { nx = -nx; ny = -ny; }   // n : côté « haut »
+      let bb = null;
+      try { bb = g.getBBox(); } catch (e) { /* figure masquée */ }
+      if (!bb || !bb.width) bb = { x: -24, y: -20, width: 48, height: 28 };
+      const w = bb.width, h = bb.height, c0 = [bb.x + w / 2, bb.y + h / 2];
+      const boite = e => { try { const b = e.getBBox(); return [b.x, b.y, b.x + b.width, b.y + b.height]; } catch (er) { return null; } };
+      // noms déjà placés : leur boîte, décalée de leur translation
+      const placee = e => { const b = boite(e), m = e.transform.baseVal.consolidate(); return b && m ? [b[0] + m.matrix.e, b[1] + m.matrix.f, b[2] + m.matrix.e, b[3] + m.matrix.f] : b; };
+      const textes = [...[...ctx.svg.querySelectorAll('.nom-vec')].filter(e => e !== g).map(placee),
+        ...[...ctx.svg.querySelectorAll('.lbl, .esc-nb')].filter(e => !e.closest('.nom-vec')).map(boite)].filter(Boolean);
+      const ronds = [...ctx.svg.querySelectorAll('.pt circle.d, .poignee circle, .origine-v, .jalon')].map(boite).filter(Boolean);
+      const traits = [...ctx.svg.querySelectorAll('.arr line')].filter(l => l.getAttribute('visibility') !== 'hidden')
+        .map(l => ({ p: [+l.getAttribute('x1'), +l.getAttribute('y1')], q: [+l.getAttribute('x2'), +l.getAttribute('y2')], w: l.closest('.axe') ? 15 : 60 }));
+      let best = null;
+      for (const t of [.5, .38, .62, .25, .75]) for (const sg of [1, -1]) for (const d of [8, 18, 30]) {
+        const dd = d + (Math.abs(nx) * w + Math.abs(ny) * h) / 2;            // distance au trait du centre de la boîte
+        const pos = [P[0] + dx * t + nx * sg * dd, P[1] + dy * t + ny * sg * dd];
+        const bx = [pos[0] - w / 2, pos[1] - h / 2, pos[0] + w / 2, pos[1] + h / 2];
+        let cout = Math.abs(t - .5) * 4 + (d - 8) / 10 + (pref && sg !== pref ? .8 : 0);
+        if (bx[0] < 2 || bx[2] > VW - 2 || bx[1] < 2 || bx[3] > VH - 2) cout += 1000;
+        textes.forEach(o => { if (recouvre(bx, o)) cout += 100; });
+        ronds.forEach(o => { if (recouvre(bx, o)) cout += 60; });
+        traits.forEach(s => { if (segCoupeBoite(s.p, s.q, bx)) cout += s.w; });
+        if (!best || cout < best.cout) best = { cout, pos };
+      }
+      g.setAttribute('transform', `translate(${best.pos[0] - c0[0]},${best.pos[1] - c0[1]})`);
+    }
     function maj() {
-      const { u, v, S, a, b } = D, au = vscl(a, u), bv = vscl(b, v), r = vadd(au, bv);
-      document.getElementById('va').innerHTML = fh(a); document.getElementById('vb').innerHTML = fh(b);
-      const expr = (a.n || b.n) ? comboHTML(a, b) : `0${vec('u')} + 0${vec('v')}`;
-      document.getElementById('live').innerHTML =
-        `<div>${vec('u')} = ${cvF(u)} &nbsp; ${vec('v')} = ${cvF(v)}</div>`
-        + `<div class="gros">${expr} = ${fh(a)}&thinsp;·&thinsp;${cvF(u)} + ${fp(b)}&thinsp;·&thinsp;${cvF(v)}</div>`
-        + `<div class="gros">= ${cvF(au)} + ${cvF(bv)} = <b>${cvF(r)}</b></div>`;
-      clear(L.aide, L.main, L.pts, L.top);
-      R.fleche(L.aide, S, vadd(S, u), { color: COL_U, cls: 'ghost', w: 2.4 }); R.nom(L.aide, S, vadd(S, u), 'u', COL_U);
-      R.fleche(L.aide, S, vadd(S, v), { color: COL_V, cls: 'ghost', w: 2.4 }); R.nom(L.aide, S, vadd(S, v), 'v', COL_V);
-      const T = defis.find(d => d.T && !d.fait);
-      if (T) svgText(L.pts, ...R.px(T.T).map((c, i) => c + (i ? 7 : 0)), '★', { class: 'etoile', 'text-anchor': 'middle' });
-      if (!vnul(au)) R.fleche(L.main, S, vadd(S, au), { color: COL_U });
-      if (!vnul(bv)) R.fleche(L.main, vadd(S, au), vadd(S, r), { color: COL_V });
-      if (!vnul(r)) R.fleche(L.top, S, vadd(S, r), { cls: 'res', w: 3.6 });
-      R.point(L.pts, S, '');
+      if (D.mode === 'mult') { document.getElementById('vk').innerHTML = fh(D.k); majMult(); }
+      else majAdd();
       majDefis(ctx.q, defis);
-      // l'étoile suivante apparaît dès qu'un défi est réussi
-      const T2 = defis.find(d => d.T && !d.fait);
-      if (T2 !== T) maj();
     }
+    // poignées : pointe de u ; en addition, aussi l'origine de v (le déplace en entier) et la pointe de v
+    poignees(R, {
+      actif: () => lv === 0,
+      liste: () => {
+        if (!D) return [];
+        const fin = vadd(D.S, D.u);
+        if (D.mode === 'mult') return [{ m: fin, bouger: m => { if (!veq(m, D.S)) { D.u = vsub(m, D.S); maj(); } } }];
+        const w = D.neg ? vscl(-1, D.v) : D.v;
+        return [
+          { m: D.Pv, bouger: m => { D.Pv = m; maj(); } },
+          { m: vadd(D.Pv, w), bouger: m => { const nw = vsub(m, D.Pv); if (!vnul(nw)) { D.v = D.neg ? vscl(-1, nw) : nw; maj(); } } },
+          { m: fin, bouger: m => {
+            if (veq(m, D.S)) return;
+            const colle = veq(D.Pv, vadd(D.S, D.u));         // v déjà au bout de u : il suit
+            D.u = vsub(m, D.S); if (colle) D.Pv = m; maj();
+          } }
+        ];
+      }
+    });
 
     /* ---------- questions ---------- */
     const COEF1 = [[1, 1], [1, -1], [2, 0], [3, 0], [-1, 0], [2, 1], [-1, 2], [3, -1], [1, -2], [-2, 1], [2, -1], [1, 3]];
