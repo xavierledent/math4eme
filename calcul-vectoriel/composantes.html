@@ -1125,9 +1125,12 @@ function schemaProduits(u, v, mode, opt = {}) {
   let calc = '';
   if (opt.calc) {
     const p1 = croix ? fmul(u[0], v[1]) : fmul(u[0], v[0]), p2 = croix ? fmul(v[0], u[1]) : fmul(u[1], v[1]);
-    const l1 = croix ? `${XU}·${YV} = ${prod(u[0], v[1])} = <b>${fh(p1)}</b>` : `${XU}·${XV} = ${prod(u[0], v[0])} = <b>${fh(p1)}</b>`;
-    const l2 = croix ? `${XV}·${YU} = ${prod(v[0], u[1])} = <b>${fh(p2)}</b>` : `${YU}·${YV} = ${prod(u[1], v[1])} = <b>${fh(p2)}</b>`;
-    calc = `<span class="sch-calc"><span style="color:${COL_P1}">${l1}</span><span style="color:${COL_P2}">${l2}</span>`
+    // notation du cours avec les noms des vecteurs (x_u, y_v… ou x_AB, y_AC…)
+    const [xu, yu, xv, yv] = [['x', 0], ['y', 0], ['x', 1], ['y', 1]].map(([c, i]) => `${c}<sub>${noms[i]}</sub>`);
+    const l1 = croix ? `${xu}·${yv} = ${prod(u[0], v[1])} = <b>${fh(p1)}</b>` : `${xu}·${xv} = ${prod(u[0], v[0])} = <b>${fh(p1)}</b>`;
+    const l2 = croix ? `${xv}·${yu} = ${prod(v[0], u[1])} = <b>${fh(p2)}</b>` : `${yu}·${yv} = ${prod(u[1], v[1])} = <b>${fh(p2)}</b>`;
+    // seulement les produits déjà tracés (correction pas à pas)
+    calc = `<span class="sch-calc">` + [[l1, COL_P1], [l2, COL_P2]].slice(0, etape).map(([l, c]) => `<span style="color:${c}">${l}</span>`).join('')
       + (opt.concl ? `<span class="sch-concl">${opt.concl}</span>` : '') + `</span>`;
   }
   return `<span class="schema ${croix ? 'croix' : 'ligne'}"><span class="sch-tab" style="width:${W}px">${col(u, noms[0])}${col(v, noms[1])}`
@@ -2309,7 +2312,7 @@ register({
     /* ---------- mode Explorer ---------- */
     function explorer() {
       // u petit, et une origine de v qui laisse la place à 2u, −2u et ½u (les défis restent toujours réalisables)
-      const u = V(...pick([[2, 1], [1, 2], [2, -1], [1, -2], [3, 1], [1, 1], [-1, 1], [3, 2], [3, -1], [-2, 1]]));
+      const u = vscl(2, V(...pick([[2, 1], [2, -1], [1, 1], [-1, 1], [1, -1], [-2, 1]])));   // composantes paires : ½u tombe sur un nœud
       let Pu, Pv;
       for (let n = 0; n < 500; n++) {
         Pu = V(rnd(-9, -4), rnd(-5, 5)); Pv = V(rnd(-2, 4), rnd(-3, 3));
@@ -2547,8 +2550,8 @@ register({
         const reset = () => { if (q.type !== 'a') q.vu = false; dessiner(); clear(L.main, L.aide); return {}; };
         if (q.type === 'test') {
           const p1 = fmul(q.u[0], q.v[1]), p2 = fmul(q.v[0], q.u[1]);
-          steps.push({ say: `On multiplie <b>en croix</b> : la première composante de ${vec('u')} par la deuxième de ${vec('v')}.` + schemaProduits(q.u, q.v, 'croix', { etape: 1 }), write: `${XU}·${YV} = ${prod(q.u[0], q.v[1])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
-          steps.push({ say: `Puis l’autre diagonale : la première de ${vec('v')} par la deuxième de ${vec('u')}.` + schemaProduits(q.u, q.v, 'croix', { etape: 2 }), write: `${XV}·${YU} = ${prod(q.v[0], q.u[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
+          steps.push({ say: `On multiplie <b>en croix</b> : la première composante de ${vec('u')} par la deuxième de ${vec('v')}.` + schemaProduits(q.u, q.v, 'croix', { etape: 1, calc: true }), write: `${XU}·${YV} = ${prod(q.u[0], q.v[1])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
+          steps.push({ say: `Puis l’autre diagonale : la première de ${vec('v')} par la deuxième de ${vec('u')}.` + schemaProduits(q.u, q.v, 'croix', { etape: 2, calc: true }), write: `${XV}·${YU} = ${prod(q.v[0], q.u[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
           steps.push({
             say: q.k ? `Les produits sont égaux : ${vec('u')} et ${vec('v')} sont colinéaires.` : `Les produits sont différents : ${vec('u')} et ${vec('v')} ne sont pas colinéaires.`,
             write: q.k ? `${fh(p1)} = ${fh(p2)} : colinéaires` : `${fh(p1)} ≠ ${fh(p2)} : pas colinéaires`,
@@ -2589,7 +2592,7 @@ register({
             run: async () => { remplir(ctx.q, 'abx', AB[0]); remplir(ctx.q, 'aby', AB[1]); await wait(300); } });
           steps.push({ say: `Composantes de ${vec('AC')}.`, write: `${vec('AC')} = ${cvS(`${fh(C[0])} − ${fp(A[0])}`, `${fh(C[1])} − ${fp(A[1])}`)} = ${cvF(AC)}`,
             run: async () => { remplir(ctx.q, 'acx', AC[0]); remplir(ctx.q, 'acy', AC[1]); await wait(300); } });
-          steps.push({ say: `Test des produits en croix pour ${vec('AB')} et ${vec('AC')}.` + schemaProduits(AB, AC, 'croix', { noms: ['AB', 'AC'] }), write: `${prod(AB[0], AC[1])} = ${fh(p1)} &nbsp; ${prod(AC[0], AB[1])} = ${fh(p2)}`, run: () => wait(400) });
+          steps.push({ say: `Test des produits en croix pour ${vec('AB')} et ${vec('AC')}.` + schemaProduits(AB, AC, 'croix', { noms: ['AB', 'AC'], calc: true }), write: `${prod(AB[0], AC[1])} = ${fh(p1)} &nbsp; ${prod(AC[0], AB[1])} = ${fh(p2)}`, run: () => wait(400) });
           steps.push({
             say: q.colin ? `Égaux : ${vec('AB')} et ${vec('AC')} sont colinéaires, donc A, B et C sont alignés.` : `Différents : A, B et C ne sont pas alignés (même si, sur la figure, l’écart se voit à peine).`,
             write: q.colin ? 'A, B, C alignés' : 'A, B, C pas alignés',
@@ -2804,8 +2807,8 @@ register({
         const reset = () => { if (q.type === 'test') q.vu = false; dessiner(); return {}; };
         if (q.type === 'test') {
           const p1 = fmul(q.u[0], q.v[0]), p2 = fmul(q.u[1], q.v[1]), s = fadd(p1, p2);
-          steps.push({ say: `On multiplie <b>en ligne</b> : les premières composantes ensemble.` + schemaProduits(q.u, q.v, 'ligne', { etape: 1 }), write: `${XU}·${XV} = ${prod(q.u[0], q.v[0])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
-          steps.push({ say: `Puis les deuxièmes composantes ensemble ; ensuite, on additionnera les deux produits.` + schemaProduits(q.u, q.v, 'ligne', { etape: 2 }), write: `${YU}·${YV} = ${prod(q.u[1], q.v[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
+          steps.push({ say: `On multiplie <b>en ligne</b> : les premières composantes ensemble.` + schemaProduits(q.u, q.v, 'ligne', { etape: 1, calc: true }), write: `${XU}·${XV} = ${prod(q.u[0], q.v[0])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
+          steps.push({ say: `Puis les deuxièmes composantes ensemble ; ensuite, on additionnera les deux produits.` + schemaProduits(q.u, q.v, 'ligne', { etape: 2, calc: true, concl: `Somme : ${fh(p1)} + ${fp(p2)} = <b>${fh(s)}</b>` }), write: `${YU}·${YV} = ${prod(q.u[1], q.v[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
           steps.push({
             say: s.n ? 'La somme n’est pas nulle : les vecteurs ne sont pas orthogonaux.' : 'La somme est nulle (les produits sont opposés) : les vecteurs sont orthogonaux.',
             write: `${fh(p1)} + ${fp(p2)} = ${fh(s)} : ${s.n ? 'pas orthogonaux' : 'orthogonaux'}`,
