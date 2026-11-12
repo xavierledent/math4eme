@@ -355,6 +355,18 @@ svg.fig.tient { cursor: grabbing; }
 .fig .jalon { fill: #fff; stroke: var(--c); stroke-width: 2.4; }
 .fig .origine-v { fill: #fff; stroke: var(--c); stroke-width: 2.4; }
 .fig .arr.copie { opacity: .8; }
+/* schéma des produits (en croix : colinéaires ; en ligne : orthogonaux) */
+.schema { display: inline-flex; align-items: center; justify-content: center; gap: 6px 16px; flex-wrap: wrap; vertical-align: middle; }
+.sch-tab { position: relative; display: flex; justify-content: space-between; flex: none; }
+.sch-col { width: 50px; display: flex; flex-direction: column; align-items: stretch; }
+.sch-nom { height: 18px; line-height: 18px; text-align: center; font-size: 15px; }
+.sch-col .cv { margin: 0; padding: 0 .35em; font-size: 1em; }
+.sch-col .cv > span { height: 30px; display: flex; align-items: center; justify-content: center; }
+.sch-traits { position: absolute; left: 0; top: 18px; pointer-events: none; overflow: visible; }
+.sch-traits line { animation: fadeIn .4s ease both; }
+.sch-calc { display: flex; flex-direction: column; gap: 2px; text-align: left; font-size: 16.5px; }
+.sch-concl { color: var(--ink); }
+.stepbar .say .schema { display: flex; margin-top: 6px; }
 
 /* @PLEIN-ECRAN:CSS début : module partagé, repris par 4eme/src/build.mjs */
 .pe-bouton { flex: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
@@ -1095,6 +1107,31 @@ function transformer(A, p0, w0, p1, w1, demiTour, ms) {
     const p = lerp(p0, p1, t), an = a0 + (a1 - a0) * t, l = l0 + (l1 - l0) * t;
     A.set(p, [p[0] + l * Math.cos(an), p[1] + l * Math.sin(an)]);
   });
+}
+
+// Schéma des produits : les composantes de u et de v en deux colonnes, reliées par des traits de couleur.
+//   mode 'croix' (colinéaires) : x_u — y_v et x_v — y_u en diagonale ; mode 'ligne' (orthogonaux) : x_u — x_v et y_u — y_v
+//   opt.etape : 0 aucun trait, 1 le premier seulement, 2 les deux (le dernier tracé est mis en avant)
+//   opt.calc : écrit les produits à droite, dans la couleur de leur trait (et la conclusion)
+const COL_P1 = '#3B5C76', COL_P2 = '#A00058';
+function schemaProduits(u, v, mode, opt = {}) {
+  const etape = opt.etape ?? 2, croix = mode === 'croix';
+  const W = 150, H = 60, c1 = 50, c2 = 100, y1 = 15, y2 = 45;   // géométrie du schéma (px) : colonnes de 50 px, lignes de 30 px
+  const traits = croix ? [[c1, y1, c2, y2], [c2, y1, c1, y2]] : [[c1, y1, c2, y1], [c1, y2, c2, y2]];
+  const svgT = traits.slice(0, etape).map(([a, b, c, d], i) =>
+    `<line x1="${a}" y1="${b}" x2="${c}" y2="${d}" stroke="${i ? COL_P2 : COL_P1}" stroke-width="${i === etape - 1 && opt.etape != null ? 3.2 : 2.2}" stroke-linecap="round"/>`).join('');
+  const noms = opt.noms || ['u', 'v'];
+  const col = (w, nom) => `<span class="sch-col"><span class="sch-nom">${vec(nom)}</span><span class="cv"><span>${fh(w[0])}</span><span>${fh(w[1])}</span></span></span>`;
+  let calc = '';
+  if (opt.calc) {
+    const p1 = croix ? fmul(u[0], v[1]) : fmul(u[0], v[0]), p2 = croix ? fmul(v[0], u[1]) : fmul(u[1], v[1]);
+    const l1 = croix ? `${XU}·${YV} = ${prod(u[0], v[1])} = <b>${fh(p1)}</b>` : `${XU}·${XV} = ${prod(u[0], v[0])} = <b>${fh(p1)}</b>`;
+    const l2 = croix ? `${XV}·${YU} = ${prod(v[0], u[1])} = <b>${fh(p2)}</b>` : `${YU}·${YV} = ${prod(u[1], v[1])} = <b>${fh(p2)}</b>`;
+    calc = `<span class="sch-calc"><span style="color:${COL_P1}">${l1}</span><span style="color:${COL_P2}">${l2}</span>`
+      + (opt.concl ? `<span class="sch-concl">${opt.concl}</span>` : '') + `</span>`;
+  }
+  return `<span class="schema ${croix ? 'croix' : 'ligne'}"><span class="sch-tab" style="width:${W}px">${col(u, noms[0])}${col(v, noms[1])}`
+    + `<svg class="sch-traits" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${svgT}</svg></span>${calc}</span>`;
 }
 
 // indice des tests (colinéaires, orthogonaux) : les phrases données, puis une mise en garde sur les signes
@@ -2271,13 +2308,19 @@ register({
 
     /* ---------- mode Explorer ---------- */
     function explorer() {
-      const base = pick([[2, 1], [1, 2], [2, -1], [1, -2], [3, 1], [1, 1], [-1, 1], [3, 2], [2, -3]]), g = pick([2, 2, 3]);
-      const u = V(base[0] * g, base[1] * g);
-      const Pu = V(-9 + Math.max(0, -num(u[0])), num(u[1]) > 0 ? -5 : 5);
-      D = { u, Pu, Pv: V(2, 0), v: V(3, 3) };
+      // u petit, et une origine de v qui laisse la place à 2u, −2u et ½u (les défis restent toujours réalisables)
+      const u = V(...pick([[2, 1], [1, 2], [2, -1], [1, -2], [3, 1], [1, 1], [-1, 1], [3, 2], [3, -1], [-2, 1]]));
+      let Pu, Pv;
+      for (let n = 0; n < 500; n++) {
+        Pu = V(rnd(-9, -4), rnd(-5, 5)); Pv = V(rnd(-2, 4), rnd(-3, 3));
+        if ([Pu, vadd(Pu, u)].every(p => R.inside(p, .8)) && [vadd(Pv, vscl(2, u)), vadd(Pv, vscl(-2, u))].every(p => R.inside(p, .8))
+          && vlen(vsub(Pv, Pu)) > 4) break;
+      }
+      const v0 = det(u, V(3, 2)).n ? V(3, 2) : V(3, -2);         // v de départ : pas colinéaire à u
+      D = { u, Pu, Pv, v: R.inside(vadd(Pv, v0), .8) ? v0 : V(1, -2) };
       const k = () => kDe(D.u, D.v);
       defis = [
-        { txt: `${vec('v')} colinéaire à ${vec('u')}, de <b>même sens</b> et plus long.`, test: () => { const x = k(); return x && num(x) > 1; } },
+        { txt: `${vec('v')} colinéaire à ${vec('u')}, de <b>même sens</b> et <b>2 fois plus long</b>.`, test: () => { const x = k(); return x && feq(x, F(2)); } },
         { txt: `${vec('v')} colinéaire à ${vec('u')}, de <b>sens contraire</b>.`, test: () => { const x = k(); return x && num(x) < 0; } },
         { txt: `${vec('v')} colinéaire à ${vec('u')}, avec un k qui <b>n’est pas un nombre entier</b>.`, test: () => { const x = k(); return x && x.n && !fint(x); } }
       ];
@@ -2291,10 +2334,9 @@ register({
       if (vnul(v)) concl = `${vec('v')} est le vecteur nul.`;
       else if (k) concl = `<span class="oui">Égaux : colinéaires.</span> ${vec('v')} = ${coefHTML(k) || ''}${vec('u')} &nbsp;(k = ${fh(k)})`;
       else concl = `<span class="non">Différents : pas colinéaires.</span>`;
+      // produits en croix : chaque trait relie les deux nombres multipliés, le produit est écrit dans sa couleur
       document.getElementById('live').innerHTML =
-        `<div>${vec('u')} = ${cvF(u)} &nbsp; ${vec('v')} = ${cvF(v)}</div>`
-        + `<div class="gros">${XU}·${YV} = ${prod(u[0], v[1])} = <b>${fh(p1)}</b></div>`
-        + `<div class="gros">${XV}·${YU} = ${prod(v[0], u[1])} = <b>${fh(p2)}</b></div>`
+        `<div class="sch-live">${schemaProduits(u, v, 'croix', { calc: true })}</div>`
         + `<div>${concl}</div>`;
       clear(L.aide, L.main, L.pts, L.poi);
       R.droite(L.aide, Pv, u);
@@ -2377,16 +2419,25 @@ register({
       dessiner();
     }
     // sansV : v n'est pas dessiné (il va apparaître en s'allongeant)
-    function dessiner(vRep, sansV = false) {
+    function dessiner(vRep, sansV = false, reps = null) {
       clear(L.aide, L.main, L.pts, L.top, L.poi);
       if (q.type !== 'a' && !q.vu) { R.base(); R.voile('Fais d’abord le test par calcul : la figure apparaîtra quand tu vérifies.'); return; }
       R.devoile();
       if (q.type === 'aligne') {
-        R.ajuster([q.A, q.B, q.C]);
+        // reps : { AB, AC } composantes fausses de l'élève, dessinées en rouge depuis A (toujours visibles)
+        const fauxV = reps ? [['AB', reps.AB], ['AC', reps.AC]].filter(([, w]) => w && !vnul(w)) : [];
+        R.ajuster([q.A, q.B, q.C, ...fauxV.map(([, w]) => vadd(q.A, w))]);
         R.droite(L.aide, q.A, q.AB);
         // la correction tracera AB et AC : les noms des points les évitent
         const evite = { seg: [[q.A, q.B], [q.A, q.C]] };
         [['A', q.A], ['B', q.B], ['C', q.C]].forEach(([n, m]) => R.point(L.pts, m, n, evite));
+        fauxV.forEach(([, w]) => R.fleche(L.top, q.A, vadd(q.A, w), { color: 'var(--ko)', w: 2.6 }));
+        fauxV.forEach(([nom, w]) => {
+          const g = svgEl('g', { class: 'nom-vec' }, L.top);
+          vecLabel(g, [0, 0], nom, 'var(--ko)');
+          svgText(g, 14, 0, ': ta réponse', { class: 'lbl', 'dominant-baseline': 'middle', fill: 'var(--ko)' });
+          R.placerNom(g, q.A, vadd(q.A, w), 0);
+        });
         return;
       }
       // « trouver a » : v n'est dessiné qu'une fois trouvé (ou la réponse fausse de l'élève, en rouge)
@@ -2432,7 +2483,7 @@ register({
     return {
       debug: () => ({ q, R, D }),
       // l'élève modifie sa réponse : son vecteur faux (en rouge) disparaît de la figure
-      edited() { if (q && q.type === 'a' && !q.trouve) dessiner(); },
+      edited() { if (q && ((q.type === 'a' && !q.trouve) || (q.type === 'aligne' && q.vu))) dessiner(); },
       next() {
         cancelAnim(); R.base();
         if (lv === 0) return explorer();
@@ -2468,7 +2519,13 @@ register({
         if (c.vides.length || !ch) return { empty: true, msg: 'Complète les composantes et choisis Oui ou Non.' };
         const bonCh = (ch === 'oui') === q.colin; marquerChoix(ctx.q, 'c', bonCh);
         reveler();
-        if (c.faux.length) return { msg: 'Vérifie les composantes : extrémité − origine.' };
+        if (c.faux.length) {
+          // les vecteurs faux sont dessinés en rouge depuis A : on voit qu'ils n'arrivent pas en B (ou en C)
+          const fx = k => c.faux.includes(k + 'x') || c.faux.includes(k + 'y');
+          dessiner(null, false, { AB: fx('ab') ? lireV(ctx.q, 'ab') : null, AC: fx('ac') ? lireV(ctx.q, 'ac') : null });
+          const quoi = fx('ab') && fx('ac') ? `${vec('AB')} et ${vec('AC')}` : fx('ab') ? vec('AB') : vec('AC');
+          return { msg: `Vérifie les composantes de ${quoi} : extrémité − origine. <span class="sub">Ta réponse est dessinée en rouge depuis A.</span>` };
+        }
         if (!bonCh) return { msg: `Fais le test des produits avec ${vec('AB')} et ${vec('AC')} : ${prod(q.AB[0], q.AC[1])} et ${prod(q.AC[0], q.AB[1])}.` };
         // bonne réponse : AB puis AC se tracent depuis A
         play(async () => {
@@ -2490,8 +2547,8 @@ register({
         const reset = () => { if (q.type !== 'a') q.vu = false; dessiner(); clear(L.main, L.aide); return {}; };
         if (q.type === 'test') {
           const p1 = fmul(q.u[0], q.v[1]), p2 = fmul(q.v[0], q.u[1]);
-          steps.push({ say: `On multiplie la première composante de ${vec('u')} par la deuxième de ${vec('v')}.`, write: `${XU}·${YV} = ${prod(q.u[0], q.v[1])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
-          steps.push({ say: `Puis la première de ${vec('v')} par la deuxième de ${vec('u')}.`, write: `${XV}·${YU} = ${prod(q.v[0], q.u[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
+          steps.push({ say: `On multiplie <b>en croix</b> : la première composante de ${vec('u')} par la deuxième de ${vec('v')}.` + schemaProduits(q.u, q.v, 'croix', { etape: 1 }), write: `${XU}·${YV} = ${prod(q.u[0], q.v[1])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
+          steps.push({ say: `Puis l’autre diagonale : la première de ${vec('v')} par la deuxième de ${vec('u')}.` + schemaProduits(q.u, q.v, 'croix', { etape: 2 }), write: `${XV}·${YU} = ${prod(q.v[0], q.u[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
           steps.push({
             say: q.k ? `Les produits sont égaux : ${vec('u')} et ${vec('v')} sont colinéaires.` : `Les produits sont différents : ${vec('u')} et ${vec('v')} ne sont pas colinéaires.`,
             write: q.k ? `${fh(p1)} = ${fh(p2)} : colinéaires` : `${fh(p1)} ≠ ${fh(p2)} : pas colinéaires`,
@@ -2532,7 +2589,7 @@ register({
             run: async () => { remplir(ctx.q, 'abx', AB[0]); remplir(ctx.q, 'aby', AB[1]); await wait(300); } });
           steps.push({ say: `Composantes de ${vec('AC')}.`, write: `${vec('AC')} = ${cvS(`${fh(C[0])} − ${fp(A[0])}`, `${fh(C[1])} − ${fp(A[1])}`)} = ${cvF(AC)}`,
             run: async () => { remplir(ctx.q, 'acx', AC[0]); remplir(ctx.q, 'acy', AC[1]); await wait(300); } });
-          steps.push({ say: `Test des produits en croix pour ${vec('AB')} et ${vec('AC')}.`, write: `${prod(AB[0], AC[1])} = ${fh(p1)} &nbsp; ${prod(AC[0], AB[1])} = ${fh(p2)}`, run: () => wait(400) });
+          steps.push({ say: `Test des produits en croix pour ${vec('AB')} et ${vec('AC')}.` + schemaProduits(AB, AC, 'croix', { noms: ['AB', 'AC'] }), write: `${prod(AB[0], AC[1])} = ${fh(p1)} &nbsp; ${prod(AC[0], AB[1])} = ${fh(p2)}`, run: () => wait(400) });
           steps.push({
             say: q.colin ? `Égaux : ${vec('AB')} et ${vec('AC')} sont colinéaires, donc A, B et C sont alignés.` : `Différents : A, B et C ne sont pas alignés (même si, sur la figure, l’écart se voit à peine).`,
             write: q.colin ? 'A, B, C alignés' : 'A, B, C pas alignés',
@@ -2630,9 +2687,8 @@ register({
     function maj() {
       const { u, v, S } = D, p1 = fmul(u[0], v[0]), p2 = fmul(u[1], v[1]), s = fadd(p1, p2);
       document.getElementById('live').innerHTML =
-        `<div>${vec('u')} = ${cvF(u)} &nbsp; ${vec('v')} = ${cvF(v)}</div>`
-        + `<div class="gros">${XU}·${XV} = ${prod(u[0], v[0])} = <b>${fh(p1)}</b></div>`
-        + `<div class="gros">${YU}·${YV} = ${prod(u[1], v[1])} = <b>${fh(p2)}</b></div>`
+        // produits en ligne, puis leur somme : chaque trait relie les deux nombres multipliés
+        `<div class="sch-live">${schemaProduits(u, v, 'ligne', { calc: true })}</div>`
         + `<div>Somme : ${fh(p1)} + ${fp(p2)} = <b>${fh(s)}</b> → ${vnul(v) ? 'vecteur nul' : s.n ? '<span class="non">pas orthogonaux</span>' : '<span class="oui">orthogonaux</span>'}</div>`;
       clear(L.aide, L.main, L.pts, L.poi);
       paire(S, u, v, !vnul(v) && !s.n ? COL_W : COL_V);
@@ -2748,8 +2804,8 @@ register({
         const reset = () => { if (q.type === 'test') q.vu = false; dessiner(); return {}; };
         if (q.type === 'test') {
           const p1 = fmul(q.u[0], q.v[0]), p2 = fmul(q.u[1], q.v[1]), s = fadd(p1, p2);
-          steps.push({ say: 'On multiplie les premières composantes.', write: `${XU}·${XV} = ${prod(q.u[0], q.v[0])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
-          steps.push({ say: 'On multiplie les deuxièmes composantes.', write: `${YU}·${YV} = ${prod(q.u[1], q.v[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
+          steps.push({ say: `On multiplie <b>en ligne</b> : les premières composantes ensemble.` + schemaProduits(q.u, q.v, 'ligne', { etape: 1 }), write: `${XU}·${XV} = ${prod(q.u[0], q.v[0])} = ${fh(p1)}`, run: async () => { remplir(ctx.q, 'p1', p1); await wait(300); } });
+          steps.push({ say: `Puis les deuxièmes composantes ensemble ; ensuite, on additionnera les deux produits.` + schemaProduits(q.u, q.v, 'ligne', { etape: 2 }), write: `${YU}·${YV} = ${prod(q.u[1], q.v[1])} = ${fh(p2)}`, run: async () => { remplir(ctx.q, 'p2', p2); await wait(300); } });
           steps.push({
             say: s.n ? 'La somme n’est pas nulle : les vecteurs ne sont pas orthogonaux.' : 'La somme est nulle (les produits sont opposés) : les vecteurs sont orthogonaux.',
             write: `${fh(p1)} + ${fp(p2)} = ${fh(s)} : ${s.n ? 'pas orthogonaux' : 'orthogonaux'}`,
