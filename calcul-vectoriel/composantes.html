@@ -341,6 +341,7 @@ svg.fig.tient { cursor: grabbing; }
 .fig .voile rect { fill: rgba(255,255,255,.86); }
 .fig .voile-ic { font-size: 34px; }
 .fig .voile-txt { font: 600 15px var(--ui); fill: var(--ink2); }
+.fig .norme-ok { fill: var(--ok); }
 
 /* @PLEIN-ECRAN:CSS début : module partagé, repris par 4eme/src/build.mjs */
 .pe-voile { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
@@ -901,6 +902,7 @@ function newQuestion(sameFigure) {
 function answerChanged() {
   $('question').querySelectorAll('.ans').forEach(i => i.classList.remove('good', 'bad'));
   if (!App.solved && $('fb').classList.contains('ko')) clearFeedback();
+  if (!App.solved && App.inst && App.inst.edited) App.inst.edited();   // ex. effacer la réponse fausse dessinée
 }
 function setState() {
   $('bCheck').disabled = App.solved;
@@ -1027,6 +1029,30 @@ function normeHTML(n2) {
 const deplacement = d => moveWords(vnum(d)) || 'aucun déplacement';
 const prod = (a, b) => `${fp(a)}&thinsp;·&thinsp;${fp(b)}`;
 
+/* ---------- petite géométrie des boîtes (pixels) : boîte = [x0, y0, x1, y1] ---------- */
+const unitv = v => { const L = Math.hypot(v[0], v[1]) || 1; return [v[0] / L, v[1] / L]; };
+// part de la plus petite des deux boîtes couverte par l'autre (0 si elles ne se touchent pas)
+function recouvre(a, b) {
+  const w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+  if (w <= 0 || h <= 0) return 0;
+  const aire = r => Math.max(1, (r[2] - r[0]) * (r[3] - r[1]));
+  return w * h / Math.min(aire(a), aire(b));
+}
+// distance d'un point à une boîte
+const distBoite = (c, b) => Math.hypot(Math.max(b[0] - c[0], 0, c[0] - b[2]), Math.max(b[1] - c[1], 0, c[1] - b[3]));
+// le segment [p, q] traverse-t-il la boîte ? (découpage de Liang-Barsky)
+function segCoupeBoite(p, q, b) {
+  const dx = q[0] - p[0], dy = q[1] - p[1];
+  let t0 = 0, t1 = 1;
+  for (const [pk, qk] of [[-dx, p[0] - b[0]], [dx, b[2] - p[0]], [-dy, p[1] - b[1]], [dy, b[3] - p[1]]]) {
+    if (pk === 0) { if (qk < 0) return false; continue; }
+    const r = qk / pk;
+    if (pk < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else { if (r < t0) return false; if (r < t1) t1 = r; }
+  }
+  return true;
+}
+
 /* ---------- repère ---------- */
 // coordonnées modèle : x vers la droite, y vers le haut. Le repère remplit toute la figure
 // et contient toujours l'origine O.
@@ -1093,7 +1119,87 @@ function makeRepere(svg) {
   }
   /* dessins */
   R.fleche = (layer, a, b, opt = {}) => arrow(layer, R.px(a), R.px(b), Object.assign({ w: 3 }, opt));
-  R.point = (layer, m, label, opt = {}) => point(layer, R.px(m), label, opt);
+  // point nommé. L'étiquette (souvent avec les coordonnées) est placée automatiquement :
+  // dans le cadre, sans couvrir le point, les flèches, les pointillés, les nombres ni les autres étiquettes.
+  //   opt.dir : direction préférée [dx, dy] (repère : y vers le haut), en cas d'égalité
+  //   opt.esc : [a, d] escalier qui sera dessiné plus tard (correction) depuis a, à éviter aussi
+  //   opt.seg : segments [[a, b], …] (coordonnées) dessinés plus tard, à éviter aussi
+  R.point = (layer, m, label, opt = {}) => {
+    const P = R.px(m), g = point(layer, P, label, opt);
+    const t = label && g.querySelector('text');
+    if (t) placerEtiquette(t, g, P, opt);
+    return g;
+  };
+  // texte libre près du point m (ex. la norme au milieu d'un vecteur), placé sans rien couvrir comme une étiquette de point
+  R.etiquette = (layer, m, txt, opt = {}) => {
+    const P = R.px(m), g = svgEl('g', { class: 'etq fade-in' }, layer);
+    const t = svgText(g, P[0], P[1], txt, { class: opt.cls || 'lbl', 'dominant-baseline': 'middle' });
+    placerEtiquette(t, g, P, Object.assign({ r: 6 }, opt));
+    return g;
+  };
+  // obstacles déjà dessinés dans la figure (sauf le groupe « moi »)
+  function obstacles(moi) {
+    const O = { segs: [], rects: [], dots: [] };
+    const bb = el => { try { const b = el.getBBox(); return b.width || b.height ? [b.x, b.y, b.x + b.width, b.y + b.height] : null; } catch (e) { return null; } };
+    for (const el of svg.querySelectorAll('line, path, text, circle')) {
+      if (moi.contains(el) || el.closest('.voile, clipPath, defs') || el.getAttribute('visibility') === 'hidden') continue;
+      const fond = g.contains(el);                          // quadrillage, axes, graduations : peu grave
+      const tag = el.tagName;
+      if (tag === 'line') {
+        if (el.classList.contains('gl')) continue;
+        const s = ['x1', 'y1', 'x2', 'y2'].map(k => +el.getAttribute(k));
+        O.segs.push({ p: [s[0], s[1]], q: [s[2], s[3]], w: fond ? 8 : el.classList.contains('guide') ? 40 : 100 });
+      } else if (tag === 'circle') {
+        if (el.classList.contains('hit') || el.classList.contains('origin-pulse')) continue;
+        const c = [+el.getAttribute('cx'), +el.getAttribute('cy')], r = +el.getAttribute('r');
+        if (el.classList.contains('d')) O.dots.push({ c, r, w: 100 });
+        else if (Math.hypot(c[0] - moi.__P[0], c[1] - moi.__P[1]) > 1) { const b = bb(el); if (b) O.rects.push({ b, w: 20 }); }
+      } else {
+        const b = bb(el); if (!b) continue;
+        O.rects.push({ b, w: fond ? 6 : tag === 'path' ? 60 : 100 });
+      }
+    }
+    return O;
+  }
+  function placerEtiquette(t, grp, P, opt) {
+    grp.__P = P;
+    const M = 3;                                            // marge au bord du cadre
+    let w = 0;
+    try { w = t.getBBox().width; } catch (e) { /* figure pas encore affichée */ }
+    if (!w) w = t.textContent.length * 8.6;
+    const h = 17, r = opt.r || 4.5;
+    const O = obstacles(grp);
+    // obstacles à venir : escalier de la correction (traits et nombres), segments annoncés
+    const seg = (a, b, wt = 100) => O.segs.push({ p: R.px(a), q: R.px(b), w: wt });
+    (opt.seg || []).forEach(([a, b]) => seg(a, b));
+    if (opt.esc) {
+      const [a, d] = opt.esc, c = vadd(a, [d[0], F(0)]), b = vadd(a, d);
+      if (d[0].n) { seg(a, c); O.rects.push({ b: boiteEtiq(etiqPos(a, c, 'h', d[1], 1), signedF(d[0])), w: 100 }); }
+      if (d[1].n) { seg(c, b); O.rects.push({ b: boiteEtiq(etiqPos(c, b, 'v', d[0], 1), signedF(d[1])), w: 100 }); }
+    }
+    // emplacements candidats : 8 directions, près du point puis un peu plus loin
+    const pref = opt.dir ? unitv([opt.dir[0], -opt.dir[1]]) : unitv([1, -1]);
+    const cands = [];
+    for (const [ecart, malus] of [[r + 4, 0], [r + 14, 4]])
+      for (let k = 0; k < 8; k++) {
+        const a = k * Math.PI / 4, cx = Math.round(Math.cos(a) * 100) / 100, cy = Math.round(Math.sin(a) * 100) / 100;
+        const sx = Math.sign(cx), sy = Math.sign(cy);
+        const x0 = sx > 0 ? P[0] + ecart * (sy ? .75 : 1) : sx < 0 ? P[0] - ecart * (sy ? .75 : 1) - w : P[0] - w / 2;
+        const yc = sy > 0 ? P[1] + ecart * (sx ? .75 : 1) + h / 2 : sy < 0 ? P[1] - ecart * (sx ? .75 : 1) - h / 2 : P[1];
+        const b = [x0, yc - h / 2, x0 + w, yc + h / 2];
+        let cout = malus + 3 * (1 - (cx * pref[0] + cy * pref[1]));
+        const hors = Math.max(0, M - b[0]) + Math.max(0, b[2] - VW + M) + Math.max(0, M - b[1]) + Math.max(0, b[3] - VH + M);
+        if (hors) cout += 1000 + 10 * hors;
+        const bi = [b[0] - 2, b[1] - 1, b[2] + 2, b[3] + 1];
+        for (const s of O.segs) if (segCoupeBoite(s.p, s.q, bi)) cout += s.w;
+        for (const o of O.rects) { const f = recouvre(bi, o.b); if (f) cout += o.w * Math.min(1, .3 + f); }
+        for (const o of O.dots) if (distBoite(o.c, bi) < o.r + 1) cout += o.w;
+        cands.push({ cout, x0, yc });
+      }
+    const best = cands.reduce((a, c) => c.cout < a.cout ? c : a);
+    t.setAttribute('text-anchor', 'start');
+    t.setAttribute('x', best.x0); t.setAttribute('y', best.yc);
+  }
   // nom du vecteur (avec sa petite flèche), à côté du milieu de la flèche
   R.nom = (layer, a, b, nom, color) => {
     const P = R.px(a), Q = R.px(b), dx = Q[0] - P[0], dy = Q[1] - P[1], L = Math.hypot(dx, dy) || 1;
@@ -1117,11 +1223,29 @@ function makeRepere(svg) {
     if (d[1].n) { await grow(R.fleche(box, c, c, { cls: 'esc-v', w: 2 }), R.px(c), R.px(b), ms); etiq(box, c, b, signedF(d[1]), 'v', d[0]); }
     return box;
   };
+  // position du nombre d'un trait de l'escalier ; cote = 1 : du côté opposé à la flèche du vecteur
+  function etiqPos(a, b, sens, autre, cote) {
+    const P = R.px(a), Q = R.px(b), m = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2], s = (num(autre) > 0 ? 1 : -1) * cote;
+    return sens === 'h' ? { x: m[0], y: m[1] + (s > 0 ? 17 : -9), anchor: 'middle' }
+                        : { x: m[0] + 9 * s, y: m[1] + 4, anchor: s > 0 ? 'start' : 'end' };
+  }
+  // boîte approximative d'un nombre de l'escalier (y = ligne de base)
+  function boiteEtiq(p, txt) {
+    const w = txt.length * 8.5 + 2, x0 = p.anchor === 'middle' ? p.x - w / 2 : p.anchor === 'end' ? p.x - w : p.x;
+    return [x0, p.y - 12, x0 + w, p.y + 3];
+  }
   function etiq(box, a, b, txt, sens, autre) {
-    const P = R.px(a), Q = R.px(b), m = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
-    // du côté opposé à la flèche du vecteur
-    const pos = sens === 'h' ? [m[0], m[1] + (num(autre) > 0 ? 17 : -9)] : [m[0] + (num(autre) > 0 ? 9 : -9), m[1] + 4];
-    svgText(box, pos[0], pos[1], txt, { class: 'esc-nb fade-in', 'text-anchor': sens === 'h' ? 'middle' : (num(autre) > 0 ? 'start' : 'end') });
+    // du côté opposé à la flèche du vecteur, sauf si une étiquette de point s'y trouve déjà
+    let p = etiqPos(a, b, sens, autre, 1);
+    const gene = q => {
+      const bq = boiteEtiq(q, txt);
+      for (const el of svg.querySelectorAll('.pt text, .pt circle.d')) {
+        try { const e = el.getBBox(); if (recouvre(bq, [e.x, e.y, e.x + e.width, e.y + e.height])) return true; } catch (er) { /* masqué */ }
+      }
+      return false;
+    };
+    if (gene(p)) { const p2 = etiqPos(a, b, sens, autre, -1); if (!gene(p2)) p = p2; }
+    svgText(box, p.x, p.y, txt, { class: 'esc-nb fade-in', 'text-anchor': p.anchor });
   }
   // petit carré d'angle droit en o, le long des directions d1 et d2
   R.angleDroit = (layer, o, d1, d2, cls = 'droit') => {
@@ -1279,13 +1403,13 @@ register({
         const d = vsub(B, A);
         R.escalier(L.aide, A, d);
         if (!vnul(d)) { R.fleche(L.main, A, B, { color: COL_U }); }
-        R.point(L.pts, A, 'A' + coordTxt(A), { off: [-8, 16], anchor: 'end' });
-        R.point(L.pts, B, 'B' + coordTxt(B));
+        R.point(L.pts, A, 'A' + coordTxt(A), { dir: vnum(vscl(-1, d)) });
+        R.point(L.pts, B, 'B' + coordTxt(B), { dir: vnum(d) });
         anneau(R, L.poi, A, COL_U); anneau(R, L.poi, B, COL_U);
         return;
       }
       if (q.type === 'tracer') {
-        R.point(L.pts, q.A, q.lA, tip ? loin(vsub(q.A, tip)) : {});
+        R.point(L.pts, q.A, q.lA, { esc: [q.A, q.r], ...(tip ? loin(vsub(q.A, tip)) : {}) });
         if (tip && !veq(tip, q.A)) { R.fleche(L.main, q.A, tip, { color: COL_TRACE }); R.nom(L.main, q.A, tip, q.nom, COL_TRACE); }
         anneau(R, L.poi, tip || q.A, '#007C74');
         return;
@@ -1293,12 +1417,15 @@ register({
       if (q.type === 'calcul' && !q.vu) { R.base(); R.voile('Calcule d’abord : la figure apparaîtra quand tu vérifies.'); return; }
       R.devoile();
       const d = vsub(q.B, q.A);
-      R.point(L.pts, q.A, q.type === 'lire' ? q.lA : q.lA + coordTxt(q.A), loin(vscl(-1, d)));
-      R.point(L.pts, q.B, q.type === 'lire' ? q.lB : q.lB + coordTxt(q.B), loin(d));
+      // étiquettes : de préférence dans le prolongement du vecteur, en évitant la flèche
+      // et l'escalier de la correction (traits et nombres), même s'ils ne sont pas encore dessinés
+      const evite = { seg: [[q.A, q.B]], esc: [q.BA ? q.B : q.A, q.r] };
+      R.point(L.pts, q.A, q.type === 'lire' ? q.lA : q.lA + coordTxt(q.A), { ...evite, dir: vnum(vscl(-1, d)) });
+      R.point(L.pts, q.B, q.type === 'lire' ? q.lB : q.lB + coordTxt(q.B), { ...evite, dir: vnum(d) });
       if (q.type !== 'calcul') R.fleche(L.main, q.A, q.B, { color: COL_U });
     }
-    // étiquette d'un point placée dans le prolongement du vecteur (elle ne gêne pas la flèche ni l'escalier)
-    const loin = d => { const [x, y] = unit(vnum(d)); return { off: [x * 13, -y * 13 + 4], anchor: x < -.35 ? 'end' : x > .35 ? 'start' : 'middle' }; };
+    // étiquette du point de départ, en traçant : à l'opposé du vecteur en cours
+    const loin = d => ({ dir: vnum(d) });
     const COL_TRACE = '#007C74';
     // lettres variées : deux points (pas O, I ni J, réservés au repère) ou une minuscule pour le vecteur
     const lettres = () => shuffle('ABCDEFGHKLMNPRST'.split('')).slice(0, 2);
@@ -1381,6 +1508,21 @@ register({
       return null;
     }
     // la flèche de l'élève, en pointillés, pour qu'il voie où elle arrive
+    // bonne réponse : la réponse rouge disparaît, le vecteur est repassé en vert avec son escalier
+    // (les composantes trouvées) et, pour la norme, sa longueur écrite le long du vecteur
+    function reussite() {
+      const dep = q.BA ? q.B : q.A, arr = q.BA ? q.A : q.B;
+      clear(L.top, L.aide);
+      R.escalier(L.aide, dep, q.r);
+      R.fleche(L.top, dep, arr, { color: 'var(--ok)', w: 3.6 });
+      if (q.type === 'norme') {
+        const n2 = scal(q.r, q.r), v = Math.sqrt(num(n2));
+        const txt = `√${fracTxt(n2)}` + (Number.isInteger(v) ? ` = ${v}` : ` ≈ ${dec(v)}`);
+        // au milieu du vecteur, de préférence du côté opposé à l'escalier, sans couvrir les étiquettes
+        const [a, b] = [vnum(dep), vnum(arr)], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], c = [b[0], a[1]];
+        R.etiquette(L.top, m, txt, { cls: 'lbl norme-ok', dir: [m[0] - c[0], m[1] - c[1]] });
+      }
+    }
     function montrerReponse(depart, rep) {
       clear(L.top);
       const fin = vadd(depart, rep);
@@ -1391,6 +1533,8 @@ register({
 
     return {
       debug: () => ({ q, R }),
+      // l'élève modifie sa réponse : sa réponse fausse (en rouge) disparaît de la figure
+      edited() { if (q && q.type !== 'tracer') clear(L.top); },
       next() {
         cancelAnim(); clear(L.top);
         R.base();
@@ -1401,7 +1545,7 @@ register({
         if (q.type === 'tracer') {
           if (!tip || veq(tip, q.A)) return { empty: true, msg: `Trace le vecteur : fais glisser sa pointe depuis ${q.lA}.` };
           const rep = vsub(tip, q.A);
-          if (veq(rep, q.r)) return { ok: true, msg: `${vec(q.nom)} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
+          if (veq(rep, q.r)) return reussite(), { ok: true, msg: `${vec(q.nom)} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
           if (veq(rep, vscl(-1, q.r))) return { msg: 'Bonne longueur, mais <b>dans l’autre sens</b> : regarde les signes des composantes.' };
           return { msg: erreurType(rep, q.r, q.nom) || `Ton vecteur a pour composantes ${cvF(rep)}. Il faut ${deplacement(q.r)}.` };
         }
@@ -1411,10 +1555,11 @@ register({
         // on dévoile la figure, à une échelle qui montre les deux points (et la réponse de l'élève)
         if (q.type === 'calcul') { q.vu = true; R.ajuster([q.A, q.B, ...(rep ? [vadd(q.BA ? q.B : q.A, rep)] : [])]); dessiner(); }
         if (!c.faux.length) {
-          if (q.type === 'calcul') R.fleche(L.top, q.BA ? q.B : q.A, q.BA ? q.A : q.B, { color: COL_U }), R.escalier(L.aide, q.BA ? q.B : q.A, q.r);
+          reussite();
           return { ok: true, msg: q.type === 'norme' ? `${normeDe(q.nom)} = ${normeHTML(scal(q.r, q.r))}` : `${vec(q.nom)} = ${cvF(q.r)} : ${deplacement(q.r)}.` };
         }
         if (!c.faux.includes('rx') && !c.faux.includes('ry')) {
+          clear(L.top);                                       // composantes justes : plus de vecteur rouge
           const n = lire(ctx.q, 'n'), x = q.r[0], y = q.r[1];
           const signes = [fadd(fmul(x, F(Math.abs(x.n), x.d)), fmul(y, F(Math.abs(y.n), y.d)))];
           if (n && signes.some(s => feq(s, n))) return { msg: `Attention : un carré n’est jamais négatif, ${carre(x.n < 0 ? x : y)} = ${fh(fsq(x.n < 0 ? x : y))}.` };
@@ -1628,7 +1773,10 @@ register({
       } else {
         const P = pts(), cotes = q.ordre === 'EFGH' ? [['E', 'F'], ['F', 'G']] : [['E', 'F'], ['G', 'E']];
         cotes.forEach(([a, b]) => svgEl('line', Object.assign({ class: 'seg' }, xyAttrs(R.px(P[a]), R.px(P[b]))), L.aide));
-        Object.entries(P).forEach(([n, m]) => R.point(L.pts, m, n + coordT(m)));
+        // la correction dessinera le parallélogramme complet et l'escalier du côté copié : les étiquettes les évitent
+        const Q = { ...P, H: q.H }, o = q.ordre.split(''), [a, b] = q.ordre === 'EFGH' ? [q.F, q.G] : [q.E, q.F];
+        const evite = { seg: o.map((n, i) => [Q[n], Q[o[(i + 1) % 4]]]), esc: [a, vsub(b, a)] };
+        Object.entries(P).forEach(([n, m]) => R.point(L.pts, m, n + coordT(m), evite));
       }
     }
     const coordT = a => `(${fracTxt(a[0])} ; ${fracTxt(a[1])})`;
@@ -1665,6 +1813,8 @@ register({
 
     return {
       debug: () => ({ q, R, D }),
+      // l'élève modifie sa réponse : son point faux (en rouge) disparaît de la figure
+      edited() { if (q) clear(L.top); },
       next() {
         cancelAnim(); R.base();
         if (lv === 0) return explorer();
@@ -1925,7 +2075,9 @@ register({
       if (q.type === 'aligne') {
         R.ajuster([q.A, q.B, q.C]);
         R.droite(L.aide, q.A, q.AB);
-        [['A', q.A], ['B', q.B], ['C', q.C]].forEach(([n, m]) => R.point(L.pts, m, n));
+        // la correction tracera AB et AC : les noms des points les évitent
+        const evite = { seg: [[q.A, q.B], [q.A, q.C]] };
+        [['A', q.A], ['B', q.B], ['C', q.C]].forEach(([n, m]) => R.point(L.pts, m, n, evite));
         return;
       }
       // « trouver a » : v n'est dessiné qu'une fois trouvé (ou la réponse fausse de l'élève, en rouge)

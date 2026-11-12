@@ -816,6 +816,7 @@ function newQuestion(sameFigure) {
 function answerChanged() {
   $('question').querySelectorAll('.ans').forEach(i => i.classList.remove('good', 'bad'));
   if (!App.solved && $('fb').classList.contains('ko')) clearFeedback();
+  if (!App.solved && App.inst && App.inst.edited) App.inst.edited();   // ex. effacer la réponse fausse dessinée
 }
 function setState() {
   $('bCheck').disabled = App.solved;
