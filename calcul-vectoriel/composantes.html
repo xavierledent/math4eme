@@ -354,6 +354,7 @@ svg.fig.tient { cursor: grabbing; }
 .retourner:hover { border-color: var(--accent); }
 .fig .jalon { fill: #fff; stroke: var(--c); stroke-width: 2.4; }
 .fig .origine-v { fill: #fff; stroke: var(--c); stroke-width: 2.4; }
+.fig .arr.copie { opacity: .8; }
 
 /* @PLEIN-ECRAN:CSS début : module partagé, repris par 4eme/src/build.mjs */
 .pe-bouton { flex: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
@@ -1083,6 +1084,32 @@ function segCoupeBoite(p, q, b) {
   return true;
 }
 
+// une flèche (pixels) passe, en un seul mouvement, de (p0, w0) à (p1, w1) : elle glisse, tourne d'un demi-tour
+// si elle se retourne (demiTour), et s'allonge ou se raccourcit
+function transformer(A, p0, w0, p1, w1, demiTour, ms) {
+  const a0 = Math.atan2(w0[1], w0[0]), l0 = Math.hypot(...w0), l1 = Math.hypot(...w1);
+  let a1 = Math.atan2(w1[1], w1[0]);
+  if (demiTour) a1 = a0 + Math.PI;                         // toujours dans le même sens de rotation
+  else { while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI; while (a0 - a1 > Math.PI) a1 += 2 * Math.PI; }
+  return tween(ms, t => {
+    const p = lerp(p0, p1, t), an = a0 + (a1 - a0) * t, l = l0 + (l1 - l0) * t;
+    A.set(p, [p[0] + l * Math.cos(an), p[1] + l * Math.sin(an)]);
+  });
+}
+
+// indice des tests (colinéaires, orthogonaux) : les phrases données, puis une mise en garde sur les signes
+// seulement si un des produits à calculer contient un nombre négatif
+function indiceProduits(paires, lignes) {
+  const p = [...lignes], neg = x => num(x) < 0, nul = x => !num(x);
+  const deuxNeg = paires.some(([a, b]) => neg(a) && neg(b));
+  const unNeg = paires.some(([a, b]) => !nul(a) && !nul(b) && neg(a) !== neg(b));
+  const m = [];
+  if (deuxNeg) m.push(`le produit de deux nombres négatifs est <b>positif</b>, (${MINUS}2)&thinsp;·&thinsp;(${MINUS}3) = 6`);
+  if (unNeg) m.push(`un nombre négatif fois un positif donne un résultat <b>négatif</b>, (${MINUS}2)&thinsp;·&thinsp;3 = ${MINUS}6`);
+  if (m.length) p.push('Attention aux signes : ' + m.join(' ; ') + '.');
+  return p.map(t => `<p class="step">• ${t}</p>`).join('');
+}
+
 /* ---------- repère ---------- */
 // coordonnées modèle : x vers la droite, y vers le haut. Le repère remplit toute la figure
 // et contient toujours l'origine O.
@@ -1094,6 +1121,7 @@ function makeRepere(svg) {
   const g = svgEl('g', { class: 'repere' }, svg);
   const R = { g, svg };
   R.px = m => [(num(m[0]) - R.x0) * R.u, (R.y1 - num(m[1])) * R.u];
+  R.pxv = w => { const a = R.px([0, 0]), b = R.px(w); return [b[0] - a[0], b[1] - a[1]]; };   // vecteur en pixels (y vers le bas)
   R.unpx = P => [R.x0 + P[0] / R.u, R.y1 - P[1] / R.u];
   // nœud entier le plus proche, à l'intérieur du cadre
   R.snap = m => [
@@ -1231,11 +1259,47 @@ function makeRepere(svg) {
     t.setAttribute('x', best.x0); t.setAttribute('y', best.yc);
   }
   // nom du vecteur (avec sa petite flèche), à côté du milieu de la flèche
-  R.nom = (layer, a, b, nom, color) => {
-    const P = R.px(a), Q = R.px(b), dx = Q[0] - P[0], dy = Q[1] - P[1], L = Math.hypot(dx, dy) || 1;
-    let nx = -dy / L, ny = dx / L;
-    if (ny > 0 || (Math.abs(ny) < .01 && nx < 0)) { nx = -nx; ny = -ny; }   // toujours du côté « haut »
-    return vecLabel(layer, [(P[0] + Q[0]) / 2 + nx * 17, (P[1] + Q[1]) / 2 + ny * 17 + 5], nom, color);
+  // placé à l'endroit le plus dégagé le long de la flèche a → b (à dessiner APRÈS les flèches, arcs…, pour qu'il les évite)
+  //   opt.coef : coefficient devant le nom (« 3 », « − ») ; opt.cote : 1 au-dessus de préférence, −1 en dessous, 0 indifférent
+  R.nom = (layer, a, b, nom, color, opt = {}) => {
+    const g = svgEl('g', { class: 'nom-vec' }, layer);
+    vecLabel(g, [0, 0], nom, color);
+    if (opt.coef) svgText(g, -8, 0, opt.coef, { class: 'lbl', 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: color });
+    R.placerNom(g, a, b, opt.cote ?? 1);
+    return g;
+  };
+  // place le groupe g le long de la flèche a → b : des deux côtés, à plusieurs hauteurs, sans couvrir une flèche,
+  // un nom, un point, une poignée, un arc d'angle, et dans le cadre
+  R.placerNom = (g, a, b, pref = 0) => {
+    const P = R.px(a), Q = R.px(b), dx = Q[0] - P[0], dy = Q[1] - P[1], Lg = Math.hypot(dx, dy) || 1;
+    let nx = -dy / Lg, ny = dx / Lg;
+    if (ny > 0 || (Math.abs(ny) < .01 && nx < 0)) { nx = -nx; ny = -ny; }   // n : côté « haut »
+    let bb = null;
+    try { bb = g.getBBox(); } catch (e) { /* figure masquée */ }
+    if (!bb || !bb.width) bb = { x: -24, y: -20, width: 48, height: 28 };
+    const w = bb.width, h = bb.height, c0 = [bb.x + w / 2, bb.y + h / 2];
+    const boite = e => { try { const b = e.getBBox(); return [b.x, b.y, b.x + b.width, b.y + b.height]; } catch (er) { return null; } };
+    // noms déjà placés : leur boîte, décalée de leur translation
+    const placee = e => { const b = boite(e), m = e.transform.baseVal.consolidate(); return b && m ? [b[0] + m.matrix.e, b[1] + m.matrix.f, b[2] + m.matrix.e, b[3] + m.matrix.f] : b; };
+    const textes = [...[...svg.querySelectorAll('.nom-vec')].filter(e => e !== g).map(placee),
+      ...[...svg.querySelectorAll('.lbl, .esc-nb, .deg, .pt text')].filter(e => !e.closest('.nom-vec')).map(boite)].filter(Boolean);
+    const ronds = [...svg.querySelectorAll('.pt circle.d, .poignee circle, .origine-v, .jalon, .arc, .droit')].map(boite).filter(Boolean);
+    const traits = [...svg.querySelectorAll('.arr line, line.guide')].filter(l => l.getAttribute('visibility') !== 'hidden')
+      .map(l => ({ p: [+l.getAttribute('x1'), +l.getAttribute('y1')], q: [+l.getAttribute('x2'), +l.getAttribute('y2')],
+        w: l.closest('.axe') || l.classList.contains('guide') ? 15 : 60 }));
+    let best = null;
+    for (const t of [.5, .38, .62, .25, .75]) for (const sg of [1, -1]) for (const d of [8, 18, 30]) {
+      const dd = d + (Math.abs(nx) * w + Math.abs(ny) * h) / 2;            // distance au trait du centre de la boîte
+      const pos = [P[0] + dx * t + nx * sg * dd, P[1] + dy * t + ny * sg * dd];
+      const bx = [pos[0] - w / 2, pos[1] - h / 2, pos[0] + w / 2, pos[1] + h / 2];
+      let cout = Math.abs(t - .5) * 4 + (d - 8) / 10 + (pref && sg !== pref ? .8 : 0);
+      if (bx[0] < 2 || bx[2] > VW - 2 || bx[1] < 2 || bx[3] > VH - 2) cout += 1000;
+      textes.forEach(o => { if (recouvre(bx, o)) cout += 100; });
+      ronds.forEach(o => { if (recouvre(bx, o)) cout += 60; });
+      traits.forEach(s => { if (segCoupeBoite(s.p, s.q, bx)) cout += s.w; });
+      if (!best || cout < best.cout) best = { cout, pos };
+    }
+    g.setAttribute('transform', `translate(${best.pos[0] - c0[0]},${best.pos[1] - c0[1]})`);
   };
   // escalier : déplacement horizontal puis vertical, en pointillés, avec les nombres
   R.escalier = (layer, a, d, opt = {}) => {
@@ -1823,13 +1887,7 @@ register({
     }
     // nom d'un vecteur avec un coefficient devant (« u », « 3u », « −v »), le long de sa flèche
     // (autreCote : de préférence sous la flèche plutôt qu'au-dessus)
-    function nomCoef(layer, a, b, coef, color, nom, autreCote = false) {
-      const g = svgEl('g', { class: 'nom-vec' }, layer);
-      vecLabel(g, [0, 0], nom, color);
-      if (coef) svgText(g, -8, 0, coef, { class: 'lbl', 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: color });
-      placerNom(g, a, b, autreCote ? -1 : 1);
-      return g;
-    }
+    const nomCoef = (layer, a, b, coef, color, nom, autreCote = false) => R.nom(layer, a, b, nom, color, { coef, cote: autreCote ? -1 : 1 });
     // nom de la combinaison demandée (« 2u − v », « ½u + 3v ») le long du résultat
     function nomCombo(layer, a, b) {
       const col = COL_RES, g = svgEl('g', { class: 'nom-vec' }, layer);
@@ -1842,62 +1900,17 @@ register({
         if (!feq(abs, F(1))) txt(fracTxt(abs), fracTxt(abs).length * 8 + 2);
         vecLabel(g, [x + 5, 0], nom, col); x += 14;
       });
-      placerNom(g, a, b, 0);
+      R.placerNom(g, a, b, 0);
       return g;
     }
-    // vecteur en pixels (y vers le bas)
-    const pxv = w => { const a = R.px([0, 0]), b = R.px(w); return [b[0] - a[0], b[1] - a[1]]; };
-    // une flèche passe, en un seul mouvement, de (p0, w0) à (p1, w1) : elle glisse, tourne d'un demi-tour
-    // si elle se retourne (demiTour), et s'allonge ou se raccourcit
-    function transformer(A, p0, w0, p1, w1, demiTour, ms) {
-      const a0 = Math.atan2(w0[1], w0[0]), l0 = Math.hypot(...w0), l1 = Math.hypot(...w1);
-      let a1 = Math.atan2(w1[1], w1[0]);
-      if (demiTour) a1 = a0 + Math.PI;                       // toujours dans le même sens de rotation
-      else { while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI; while (a0 - a1 > Math.PI) a1 += 2 * Math.PI; }
-      return tween(ms, t => {
-        const p = lerp(p0, p1, t), an = a0 + (a1 - a0) * t, l = l0 + (l1 - l0) * t;
-        A.set(p, [p[0] + l * Math.cos(an), p[1] + l * Math.sin(an)]);
-      });
-    }
+    const pxv = w => R.pxv(w);
     // « u + v » ou « u − v » le long du résultat
     function nomSomme(layer, a, b, neg) {
       const col = COL_RES, g = svgEl('g', { class: 'nom-vec' }, layer);
       vecLabel(g, [-18, 0], 'u', col);
       svgText(g, 0, 0, neg ? MINUS : '+', { class: 'lbl', 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: col });
       vecLabel(g, [18, 0], 'v', col);
-      placerNom(g, a, b, 0);
-    }
-    // place le groupe g à l'endroit le plus dégagé le long de la flèche a → b : des deux côtés, à plusieurs
-    // hauteurs, sans couvrir une flèche, un nom, un point ou une poignée, et dans le cadre
-    function placerNom(g, a, b, pref) {
-      const P = R.px(a), Q = R.px(b), dx = Q[0] - P[0], dy = Q[1] - P[1], Lg = Math.hypot(dx, dy) || 1;
-      let nx = -dy / Lg, ny = dx / Lg;
-      if (ny > 0 || (Math.abs(ny) < .01 && nx < 0)) { nx = -nx; ny = -ny; }   // n : côté « haut »
-      let bb = null;
-      try { bb = g.getBBox(); } catch (e) { /* figure masquée */ }
-      if (!bb || !bb.width) bb = { x: -24, y: -20, width: 48, height: 28 };
-      const w = bb.width, h = bb.height, c0 = [bb.x + w / 2, bb.y + h / 2];
-      const boite = e => { try { const b = e.getBBox(); return [b.x, b.y, b.x + b.width, b.y + b.height]; } catch (er) { return null; } };
-      // noms déjà placés : leur boîte, décalée de leur translation
-      const placee = e => { const b = boite(e), m = e.transform.baseVal.consolidate(); return b && m ? [b[0] + m.matrix.e, b[1] + m.matrix.f, b[2] + m.matrix.e, b[3] + m.matrix.f] : b; };
-      const textes = [...[...ctx.svg.querySelectorAll('.nom-vec')].filter(e => e !== g).map(placee),
-        ...[...ctx.svg.querySelectorAll('.lbl, .esc-nb')].filter(e => !e.closest('.nom-vec')).map(boite)].filter(Boolean);
-      const ronds = [...ctx.svg.querySelectorAll('.pt circle.d, .poignee circle, .origine-v, .jalon')].map(boite).filter(Boolean);
-      const traits = [...ctx.svg.querySelectorAll('.arr line')].filter(l => l.getAttribute('visibility') !== 'hidden')
-        .map(l => ({ p: [+l.getAttribute('x1'), +l.getAttribute('y1')], q: [+l.getAttribute('x2'), +l.getAttribute('y2')], w: l.closest('.axe') ? 15 : 60 }));
-      let best = null;
-      for (const t of [.5, .38, .62, .25, .75]) for (const sg of [1, -1]) for (const d of [8, 18, 30]) {
-        const dd = d + (Math.abs(nx) * w + Math.abs(ny) * h) / 2;            // distance au trait du centre de la boîte
-        const pos = [P[0] + dx * t + nx * sg * dd, P[1] + dy * t + ny * sg * dd];
-        const bx = [pos[0] - w / 2, pos[1] - h / 2, pos[0] + w / 2, pos[1] + h / 2];
-        let cout = Math.abs(t - .5) * 4 + (d - 8) / 10 + (pref && sg !== pref ? .8 : 0);
-        if (bx[0] < 2 || bx[2] > VW - 2 || bx[1] < 2 || bx[3] > VH - 2) cout += 1000;
-        textes.forEach(o => { if (recouvre(bx, o)) cout += 100; });
-        ronds.forEach(o => { if (recouvre(bx, o)) cout += 60; });
-        traits.forEach(s => { if (segCoupeBoite(s.p, s.q, bx)) cout += s.w; });
-        if (!best || cout < best.cout) best = { cout, pos };
-      }
-      g.setAttribute('transform', `translate(${best.pos[0] - c0[0]},${best.pos[1] - c0[1]})`);
+      R.placerNom(g, a, b, 0);
     }
     function maj() {
       if (D.mode === 'mult') { document.getElementById('vk').innerHTML = fh(D.k); majMult(); }
@@ -2056,7 +2069,7 @@ register({
           R.fleche(L.top, q.S, fin, { color: 'var(--ko)', w: 3 });
           const g = svgEl('g', { class: 'nom-vec' }, L.top);
           svgText(g, 0, 0, 'ta réponse', { class: 'lbl', 'dominant-baseline': 'middle', fill: 'var(--ko)' });
-          placerNom(g, q.S, fin, 0);
+          R.placerNom(g, q.S, fin, 0);
         }
         return;
       }
@@ -2237,7 +2250,7 @@ register({
   id: 'c3', title: 'Vecteurs colinéaires', short: 'Colinéaires',
   accent: '#EC6708', bg: '#FDF1E7',
   explorer: 'fais tourner v',
-  levels: [['Le test', `${XU}·${YV} = ${XV}·${YU} ?`], ['Trouver a', 'équation à résoudre'], ['Alignés ?', 'trois points']],
+  levels: [['Le test', 'test de colinéarité'], ['Trouver a', 'équation à résoudre'], ['Alignés ?', 'trois points']],
   newLabel: () => null,
   nextLabel: lv => lv === 0 ? '↻ Nouveaux défis' : null,
   consigne: lv => [
@@ -2285,10 +2298,13 @@ register({
         + `<div>${concl}</div>`;
       clear(L.aide, L.main, L.pts, L.poi);
       R.droite(L.aide, Pv, u);
-      R.fleche(L.main, Pu, vadd(Pu, u), { color: COL_U }); R.nom(L.main, Pu, vadd(Pu, u), 'u', COL_U);
-      if (!vnul(v)) { R.fleche(L.main, Pv, vadd(Pv, v), { color: k ? COL_W : COL_V }); R.nom(L.main, Pv, vadd(Pv, v), 'v', k ? COL_W : COL_V); }
+      R.fleche(L.main, Pu, vadd(Pu, u), { color: COL_U });
+      if (!vnul(v)) R.fleche(L.main, Pv, vadd(Pv, v), { color: k ? COL_W : COL_V });
       R.point(L.pts, Pv, '', { r: 3.5 });
       anneau(R, L.poi, vadd(Pv, v), COL_V);
+      // les noms en dernier : ils évitent les flèches
+      R.nom(L.main, Pu, vadd(Pu, u), 'u', COL_U);
+      if (!vnul(v)) R.nom(L.main, Pv, vadd(Pv, v), 'v', k ? COL_W : COL_V);
       majDefis(ctx.q, defis);
     }
     poignees(R, {
@@ -2360,7 +2376,8 @@ register({
       ctx.tip.innerHTML = '';
       dessiner();
     }
-    function dessiner(vRep) {
+    // sansV : v n'est pas dessiné (il va apparaître en s'allongeant)
+    function dessiner(vRep, sansV = false) {
       clear(L.aide, L.main, L.pts, L.top, L.poi);
       if (q.type !== 'a' && !q.vu) { R.base(); R.voile('Fais d’abord le test par calcul : la figure apparaîtra quand tu vérifies.'); return; }
       R.devoile();
@@ -2373,22 +2390,49 @@ register({
         return;
       }
       // « trouver a » : v n'est dessiné qu'une fois trouvé (ou la réponse fausse de l'élève, en rouge)
-      const v = vRep || (q.type === 'a' && !q.trouve ? null : q.v);
+      const v = sansV ? null : vRep || (q.type === 'a' && !q.trouve ? null : q.v);
       if (!q.P) q.P = placerDeux(R, q.u, q.v);
-      if (!v) R.point(L.pts, q.P[1], '', { r: 3.5 });
       const [Pu, Pv] = q.P;
       R.base();
+      // la réponse fausse reste toujours visible : le cadre s'élargit si besoin
+      if (vRep && !R.inside(vadd(Pv, vRep))) R.ajuster([Pu, vadd(Pu, q.u), Pv, vadd(Pv, vRep)]);
+      if (!v) R.point(L.pts, Pv, '', { r: 3.5 });
       R.droite(L.aide, Pv, q.u);
-      R.fleche(L.main, Pu, vadd(Pu, q.u), { color: COL_U }); R.nom(L.main, Pu, vadd(Pu, q.u), 'u', COL_U);
-      if (v && !vnul(v)) {
-        const col = vRep ? 'var(--ko)' : COL_V;
-        R.fleche(L.main, Pv, vadd(Pv, v), { color: col }); R.nom(L.main, Pv, vadd(Pv, v), 'v', col);
-      }
+      R.fleche(L.main, Pu, vadd(Pu, q.u), { color: COL_U });
+      const col = vRep ? 'var(--ko)' : COL_V;
+      if (v && !vnul(v)) R.fleche(L.main, Pv, vadd(Pv, v), { color: col });
+      // les noms en dernier : ils évitent les flèches et la droite
+      R.nom(L.main, Pu, vadd(Pu, q.u), 'u', COL_U);
+      if (v && !vnul(v)) R.nom(L.main, Pv, vadd(Pv, v), 'v', col);
+      if (vRep && !vnul(vRep)) taReponse(Pv, vadd(Pv, vRep));
+    }
+    // « ta réponse », en rouge, le long du vecteur faux
+    function taReponse(a, b) {
+      const g = svgEl('g', { class: 'nom-vec' }, L.top);
+      svgText(g, 0, 0, 'ta réponse', { class: 'lbl', 'dominant-baseline': 'middle', fill: 'var(--ko)' });
+      R.placerNom(g, a, b, -1);
+    }
+    // une COPIE de u (u reste à sa place) glisse jusqu'à l'origine de v ; si v = k·u, elle s'étire
+    // (et se retourne si k < 0) pour se poser exactement sur v : on voit le parallélisme
+    async function copieU(k) {
+      const [Pu, Pv] = q.P, cible = k ? vscl(k, q.u) : q.u;
+      const A = R.fleche(L.top, Pu, vadd(Pu, q.u), { color: COL_U, w: 2.4, cls: 'copie' });
+      await wait(250);
+      await transformer(A, R.px(Pu), R.pxv(q.u), R.px(Pv), R.pxv(cible), !!k && k.n < 0, 1400);
+      if (k) R.nom(L.top, Pv, vadd(Pv, cible), 'u', COL_U, { coef: feq(k, F(-1)) ? MINUS : fracTxt(k), cote: -1 });
+    }
+    // v apparaît en s'allongeant depuis son origine, puis son nom
+    async function poserV() {
+      const Pv = q.P[1];
+      await grow(R.fleche(L.main, Pv, Pv, { color: COL_V }), R.px(Pv), R.px(vadd(Pv, q.v)), 900);
+      R.nom(L.main, Pv, vadd(Pv, q.v), 'v', COL_V);
     }
     const reveler = () => { if (!q.vu) { q.vu = true; dessiner(); } };
 
     return {
       debug: () => ({ q, R, D }),
+      // l'élève modifie sa réponse : son vecteur faux (en rouge) disparaît de la figure
+      edited() { if (q && q.type === 'a' && !q.trouve) dessiner(); },
       next() {
         cancelAnim(); R.base();
         if (lv === 0) return explorer();
@@ -2402,16 +2446,20 @@ register({
           if (c.vides.length || !ch) return { empty: true, msg: 'Complète les deux produits et choisis Oui ou Non' + (ch === 'oui' ? ', puis k.' : '.') };
           const bonCh = (ch === 'oui') === !!q.k; marquerChoix(ctx.q, 'c', bonCh);
           reveler();
-          if (c.faux.includes('p1') || c.faux.includes('p2')) return { msg: `Recalcule les produits : ${XU}·${YV} = ${prod(q.u[0], q.v[1])} et ${XV}·${YU} = ${prod(q.v[0], q.u[1])}.` };
+          if (c.faux.includes('p1') && c.faux.includes('p2')) return { msg: `Les deux produits sont faux. Recalcule : ${XU}·${YV} = ${prod(q.u[0], q.v[1])} et ${XV}·${YU} = ${prod(q.v[0], q.u[1])}.` };
+          if (c.faux.includes('p1')) return { msg: `Le produit ${XU}·${YV} est faux (l’autre est juste). Recalcule ${prod(q.u[0], q.v[1])}.` };
+          if (c.faux.includes('p2')) return { msg: `Le produit ${XV}·${YU} est faux (l’autre est juste). Recalcule ${prod(q.v[0], q.u[1])}.` };
           if (!bonCh) return { msg: feq(p1, p2) ? 'Les deux produits sont <b>égaux</b> : les vecteurs sont donc colinéaires.' : 'Les deux produits sont <b>différents</b> : les vecteurs ne sont pas colinéaires, même s’ils en ont l’air !' };
-          if (c.faux.includes('k')) return { msg: `${vec('v')} = k${vec('u')} : chaque composante de ${vec('v')} est k fois celle de ${vec('u')}, donc k = ${frS(XV, XU)}.` };
+          if (c.faux.includes('k')) return { msg: `${vec('v')} = k${vec('u')} : chaque composante de ${vec('v')} est k fois celle de ${vec('u')}, donc k = ${q.u[0].n ? frS(XV, XU) : frS(YV, YU)}.` };
+          // bonne réponse : une copie de u vient se poser sur v (colinéaires) ou montre l'écart de direction
+          play(() => copieU(q.k));
           return { ok: true, msg: q.k ? `Colinéaires : ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}. Sur la figure, ${vec('v')} est parallèle à ${vec('u')}.`
             : `Pas colinéaires : ${fh(p1)} ≠ ${fh(p2)}. Sur la figure, ${vec('v')} sort de la direction de ${vec('u')}${degres(q.u, q.v) < 12 || degres(q.u, q.v) > 168 ? ' — de très peu : à l’œil, on aurait pu se tromper !' : '.'}` };
         }
         if (q.type === 'a') {
           const c = corriger(ctx.q, { a: q.a });
           if (c.vides.length) return { empty: true, msg: 'Écris la valeur de a.' };
-          if (!c.faux.length) { q.trouve = true; dessiner(); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('u')} = ${cvF(q.u)} et ${vec('v')} = ${cvF(q.v)} sont parallèles.` }; }
+          if (!c.faux.length) { q.trouve = true; dessiner(null, true); play(poserV); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('u')} = ${cvF(q.u)} et ${vec('v')} = ${cvF(q.v)} sont parallèles.` }; }
           const ar = lire(ctx.q, 'a');
           if (ar) { const e = q.e[1].map(x => x === 'a' ? ar : x); if (q.e[1].includes('a') && !vnul(e)) dessiner(e); }
           return { msg: `Avec cette valeur, les vecteurs ne sont pas colinéaires${q.e[1].includes('a') ? ' (ton vecteur en rouge)' : ''}. Écris ${XU}·${YV} = ${XV}·${YU} en remplaçant par les nombres.` };
@@ -2422,10 +2470,18 @@ register({
         reveler();
         if (c.faux.length) return { msg: 'Vérifie les composantes : extrémité − origine.' };
         if (!bonCh) return { msg: `Fais le test des produits avec ${vec('AB')} et ${vec('AC')} : ${prod(q.AB[0], q.AC[1])} et ${prod(q.AC[0], q.AB[1])}.` };
+        // bonne réponse : AB puis AC se tracent depuis A
+        play(async () => {
+          await grow(R.fleche(L.main, q.A, q.A, { color: COL_U }), R.px(q.A), R.px(q.B), 700);
+          await grow(R.fleche(L.main, q.A, q.A, { color: COL_V, w: 2.2 }), R.px(q.A), R.px(q.C), 900);
+        });
         return { ok: true, msg: q.colin ? 'A, B et C sont alignés : C est sur la droite AB.' : 'Pas alignés : C n’est pas sur la droite AB. Sur la figure, l’écart est minuscule : seul le calcul permet d’en être sûr.' };
       },
       hint() {
-        if (q.type === 'test') return `<p class="step">• ${XU}·${YV} : première composante de ${vec('u')} fois deuxième de ${vec('v')}.</p><p class="step">• Si les deux produits sont égaux, les vecteurs sont colinéaires.</p>`;
+        if (q.type === 'test') return indiceProduits([[q.u[0], q.v[1]], [q.v[0], q.u[1]]],
+          [`Calcule les deux produits en croix : ${XU}·${YV} = ${prod(q.u[0], q.v[1])} et ${XV}·${YU} = ${prod(q.v[0], q.u[1])}.`,
+           `S’ils sont égaux, les vecteurs sont colinéaires ; sinon, ils ne le sont pas.`,
+           `S’ils sont colinéaires, k est le nombre par lequel on multiplie <b>chaque</b> composante de ${vec('u')} pour obtenir ${vec('v')}.`]);
         if (q.type === 'a') return `<p class="step">• Remplace dans ${XU}·${YV} = ${XV}·${YU} : ${fois(q.e[0][0], q.e[1][1])} = ${fois(q.e[1][0], q.e[0][1])}.</p><p class="step">• Puis résous l’équation.</p>`;
         return `<p class="step">• ${vec('AB')} = ${cvS('x<sub>B</sub> − x<sub>A</sub>', 'y<sub>B</sub> − y<sub>A</sub>')}, de même pour ${vec('AC')}.</p><p class="step">• Puis teste si ${vec('AB')} et ${vec('AC')} sont colinéaires.</p>`;
       },
@@ -2441,22 +2497,22 @@ register({
             write: q.k ? `${fh(p1)} = ${fh(p2)} : colinéaires` : `${fh(p1)} ≠ ${fh(p2)} : pas colinéaires`,
             run: async () => {
               choisir(ctx.q, 'c', q.k ? 'oui' : 'non'); const kl = ctx.q.querySelector('.k-ligne'); if (kl) kl.hidden = !q.k;
-              q.vu = true; dessiner(); clear(L.main);
-              const [Pu, Pv] = q.P;
-              R.fleche(L.main, Pu, vadd(Pu, q.u), { color: COL_U }); R.nom(L.main, Pu, vadd(Pu, q.u), 'u', COL_U);
-              await grow(R.fleche(L.main, Pv, Pv, { color: COL_V }), R.px(Pv), R.px(vadd(Pv, q.v)), 900);
-              R.nom(L.main, Pv, vadd(Pv, q.v), 'v', COL_V);
+              q.vu = true; dessiner(null, true);
+              await poserV();
             }
           });
+          // une copie de u (u reste à sa place) glisse jusqu'à l'origine de v
           if (q.k) steps.push({
-            say: `${vec('v')} = k${vec('u')} : on cherche par combien multiplier ${vec('u')}. On étire ${vec('u')}…`,
-            write: `k = ${frS(XV, XU)} = ${frS(fh(q.v[0]), fh(q.u[0]))} = ${fh(q.k)} &nbsp; ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}`,
-            run: async () => {
-              const Pv = q.P[1], a = R.fleche(L.top, Pv, vadd(Pv, q.u), { color: COL_U, w: 2.4 });
-              await wait(300);
-              await tween(1300, t => a.set(R.px(Pv), R.px(vadd(Pv, vscl(F(Math.round((1 + (num(q.k) - 1) * t) * 1000), 1000), q.u)))));
-              remplir(ctx.q, 'k', q.k);
-            }
+            say: `${vec('v')} = k${vec('u')} : une <b>copie</b> de ${vec('u')} glisse jusqu’à l’origine de ${vec('v')}${q.k.n < 0 ? ', se retourne' : ''} et ${Math.abs(num(q.k)) > 1 ? 's’allonge' : 'se raccourcit'} : elle se pose exactement sur ${vec('v')}. Les deux vecteurs sont parallèles.`,
+            // k = x_v / x_u, ou y_v / y_u quand x_u = 0 (jamais de division par 0)
+            write: q.u[0].n ? `k = ${frS(XV, XU)} = ${frS(fh(q.v[0]), fh(q.u[0]))} = ${fh(q.k)} &nbsp; ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}`
+              : `k = ${frS(YV, YU)} = ${frS(fh(q.v[1]), fh(q.u[1]))} = ${fh(q.k)} &nbsp; ${vec('v')} = ${coefHTML(q.k) || ''}${vec('u')}`,
+            run: async () => { await copieU(q.k); remplir(ctx.q, 'k', q.k); }
+          });
+          else steps.push({
+            say: `Une <b>copie</b> de ${vec('u')}, glissée jusqu’à l’origine de ${vec('v')} : elle ne suit pas la direction de ${vec('v')}, même si l’écart est faible.`,
+            write: null,
+            run: () => copieU(null)
           });
         } else if (q.type === 'a') {
           const [u, v] = q.e, x1 = u[0], y1 = u[1], x2 = v[0], y2 = v[1];
@@ -2467,9 +2523,8 @@ register({
           steps.push({ say: `On divise par ${fh(q.c)}.`, write: `<i>a</i> = ${frS(fh(q.n), fh(q.c))} = ${fh(q.a)}`,
             run: async () => {
               remplir(ctx.q, 'a', q.a);
-              clear(L.main); const [Pu, Pv] = q.P;
-              R.fleche(L.main, Pu, vadd(Pu, q.u), { color: COL_U }); R.nom(L.main, Pu, vadd(Pu, q.u), 'u', COL_U);
-              await grow(R.fleche(L.main, Pv, Pv, { color: COL_V }), R.px(Pv), R.px(vadd(Pv, q.v)), 900);
+              dessiner(null, true);
+              await poserV();
             } });
         } else {
           const { A, B, C, AB, AC } = q, p1 = fmul(AB[0], AC[1]), p2 = fmul(AC[0], AB[1]);
@@ -2522,20 +2577,39 @@ register({
     const O = V(0, 0);
 
     // u et v depuis la même origine, avec l'angle droit (ou l'angle en degrés)
-    function paire(S, u, v, colV = COL_V, angle = true) {
-      R.fleche(L.main, S, vadd(S, u), { color: COL_U }); R.nom(L.main, S, vadd(S, u), 'u', COL_U);
-      if (!v || vnul(v)) return;
-      R.fleche(L.main, S, vadd(S, v), { color: colV }); R.nom(L.main, S, vadd(S, v), 'v', colV);
-      if (!angle) return;
-      if (!scal(u, v).n) R.angleDroit(L.aide, S, u, v);
-      else {
-        const P = R.px(S), a1 = Math.atan2(num(u[1]), num(u[0])), a2 = Math.atan2(num(v[1]), num(v[0]));
-        let d = a2 - a1; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
-        const r = 26, p = a => [P[0] + r * Math.cos(a), P[1] - r * Math.sin(a)];
-        svgEl('path', { class: 'arc fade-in', d: `M${p(a1)}A${r},${r} 0 0 ${d > 0 ? 0 : 1} ${p(a2)}` }, L.aide);
-        const m = p(a1 + d / 2), e = [m[0] + (m[0] - P[0]) * .9, m[1] + (m[1] - P[1]) * .9];
-        svgText(L.aide, e[0], e[1] + 4, `≈ ${Math.round(degres(u, v))}°`, { class: 'deg fade-in', 'text-anchor': 'middle' });
+    // (vRep : v est la réponse fausse de l'élève, en rouge, avec « ta réponse »)
+    function paire(S, u, v, colV = COL_V, angle = true, vRep = false) {
+      R.fleche(L.main, S, vadd(S, u), { color: COL_U });
+      const avecV = v && !vnul(v);
+      if (avecV) R.fleche(L.main, S, vadd(S, v), { color: colV });
+      if (avecV && angle) {
+        if (!scal(u, v).n) R.angleDroit(L.aide, S, u, v);
+        else {
+          const P = R.px(S), a1 = Math.atan2(num(u[1]), num(u[0])), a2 = Math.atan2(num(v[1]), num(v[0]));
+          let d = a2 - a1; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+          const r = 26, p = a => [P[0] + r * Math.cos(a), P[1] - r * Math.sin(a)];
+          svgEl('path', { class: 'arc fade-in', d: `M${p(a1)}A${r},${r} 0 0 ${d > 0 ? 0 : 1} ${p(a2)}` }, L.aide);
+          const m = p(a1 + d / 2), e = [m[0] + (m[0] - P[0]) * .9, m[1] + (m[1] - P[1]) * .9];
+          svgText(L.aide, e[0], e[1] + 4, `≈ ${Math.round(degres(u, v))}°`, { class: 'deg fade-in', 'text-anchor': 'middle' });
+        }
       }
+      // les noms en dernier : ils évitent les flèches, l'arc et l'angle
+      R.nom(L.main, S, vadd(S, u), 'u', COL_U);
+      if (avecV) R.nom(L.main, S, vadd(S, v), 'v', colV);
+      if (avecV && vRep) {
+        const g = svgEl('g', { class: 'nom-vec' }, L.top);
+        svgText(g, 0, 0, 'ta réponse', { class: 'lbl', 'dominant-baseline': 'middle', fill: 'var(--ko)' });
+        R.placerNom(g, S, vadd(S, v), -1);
+      }
+    }
+    // v apparaît en s'allongeant depuis l'origine commune, puis l'angle (droit ou en degrés) et les noms
+    async function poserV(v) {
+      const S = V(0, 0);
+      clear(L.aide, L.main, L.pts, L.top, L.poi); R.devoile();
+      R.ajuster([S, q.u, v, vscl(-1, q.u)], 1.2);
+      R.fleche(L.main, S, q.u, { color: COL_U });
+      await grow(R.fleche(L.main, S, S, { color: COL_V }), R.px(S), R.px(v), 900);
+      clear(L.main, L.aide); paire(S, q.u, v);
     }
 
     /* ---------- mode Explorer ---------- */
@@ -2617,12 +2691,14 @@ register({
       const v = vRep || (montrerV || q.type === 'test' ? q.v : null);
       const S = V(0, 0);
       R.ajuster([S, q.u, ...(v ? [v] : []), vscl(-1, q.u)], 1.2);
-      paire(S, q.u, v, vRep ? 'var(--ko)' : COL_V);
+      paire(S, q.u, v, vRep ? 'var(--ko)' : COL_V, true, !!vRep);
       if (!v) R.droite(L.aide, S, V(fneg(q.u[1]), q.u[0]), 'guide faible');
     }
 
     return {
       debug: () => ({ q, R, D }),
+      // l'élève modifie sa réponse : son vecteur faux (en rouge) disparaît de la figure
+      edited() { if (q && q.type !== 'test') dessiner(); },
       next() {
         cancelAnim(); R.base();
         if (lv === 0) return explorer();
@@ -2635,8 +2711,11 @@ register({
           if (c.vides.length || !ch) return { empty: true, msg: 'Complète les deux produits et choisis Oui ou Non.' };
           const bonCh = (ch === 'oui') === q.ortho; marquerChoix(ctx.q, 'c', bonCh);
           q.vu = true; dessiner();
-          if (c.faux.length) return { msg: `Recalcule : ${XU}·${XV} = ${prod(q.u[0], q.v[0])} et ${YU}·${YV} = ${prod(q.u[1], q.v[1])}.` };
+          if (c.faux.includes('p1') && c.faux.includes('p2')) return { msg: `Les deux produits sont faux. Recalcule : ${XU}·${XV} = ${prod(q.u[0], q.v[0])} et ${YU}·${YV} = ${prod(q.u[1], q.v[1])}.` };
+          if (c.faux.includes('p1')) return { msg: `Le produit ${XU}·${XV} est faux (l’autre est juste). Recalcule ${prod(q.u[0], q.v[0])}.` };
+          if (c.faux.includes('p2')) return { msg: `Le produit ${YU}·${YV} est faux (l’autre est juste). Recalcule ${prod(q.u[1], q.v[1])}.` };
           if (!bonCh) return { msg: `${fh(p1)} + ${fp(p2)} = ${fh(fadd(p1, p2))} : ${q.ortho ? 'la somme est nulle, ils <b>sont</b> orthogonaux.' : 'la somme n’est pas nulle, ils ne sont <b>pas</b> orthogonaux (regarde l’angle sur la figure).'}` };
+          play(() => poserV(q.v));                              // bonne réponse : v se trace, puis l'angle
           return { ok: true, msg: q.ortho ? `${fh(p1)} + ${fp(p2)} = 0 : orthogonaux, l’angle est droit.` : `${fh(p1)} + ${fp(p2)} = ${fh(fadd(p1, p2))} ≠ 0 : pas orthogonaux (angle ≈ ${Math.round(degres(q.u, q.v))}°).` };
         }
         if (q.type === 'construire') {
@@ -2646,19 +2725,21 @@ register({
           ['rx', 'ry'].forEach(k => { const i = champDe(ctx.q, k); i.classList.toggle('good', !!ok); i.classList.toggle('bad', !ok); });
           if (!v) return { msg: 'Écris des nombres (fractions avec /).' };
           if (vnul(v)) return { msg: 'Le vecteur nul ne compte pas : cherche un vecteur non nul.' };
-          if (ok) { q.v = v; dessiner(null, true); } else dessiner(v);
+          if (ok) { q.v = v; play(() => poserV(v)); } else dessiner(v);
           if (ok) return { ok: true, msg: `${prod(q.u[0], v[0])} + ${prod(q.u[1], v[1])} = 0 : orthogonaux. <span class="sub">Il y en a une infinité : par exemple ${cvF(V(fneg(q.u[1]), q.u[0]))} et tous ses multiples.</span>` };
           return { msg: `${prod(q.u[0], v[0])} + ${prod(q.u[1], v[1])} = ${fh(scal(q.u, v))} ≠ 0. Cherche ${XV} et ${YV} pour que les deux produits soient <b>opposés</b>.` };
         }
         const c = corriger(ctx.q, { a: q.a });
         if (c.vides.length) return { empty: true, msg: 'Écris la valeur de a.' };
-        if (!c.faux.length) { dessiner(null, true); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('v')} = ${cvF(q.v)} est orthogonal à ${vec('u')}.` }; }
+        if (!c.faux.length) { play(() => poserV(q.v)); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('v')} = ${cvF(q.v)} est orthogonal à ${vec('u')}.` }; }
         const ar = lire(ctx.q, 'a');
         if (ar) { const e = q.e[1].map(x => x === 'a' ? ar : x); if (!vnul(e)) dessiner(e); }
         return { msg: `Avec cette valeur, l’angle n’est pas droit (ton vecteur en rouge). Remplace dans ${XU}·${XV} + ${YU}·${YV} = 0.` };
       },
       hint() {
-        if (q.type === 'test') return `<p class="step">• ${XU}·${XV} : premières composantes multipliées ; ${YU}·${YV} : deuxièmes composantes multipliées.</p><p class="step">• Orthogonaux si leur somme vaut 0.</p>`;
+        if (q.type === 'test') return indiceProduits([[q.u[0], q.v[0]], [q.u[1], q.v[1]]],
+          [`Multiplie les premières composantes, puis les deuxièmes : ${XU}·${XV} = ${prod(q.u[0], q.v[0])} et ${YU}·${YV} = ${prod(q.u[1], q.v[1])}.`,
+           `Additionne les deux produits : si la somme vaut 0, les vecteurs sont orthogonaux ; sinon, ils ne le sont pas.`]);
         if (q.type === 'construire') return `<p class="step">• Il faut ${fp(q.u[0])}·${XV} + ${fp(q.u[1])}·${YV} = 0.</p><p class="step">• Essaie d’échanger les composantes de ${vec('u')} et de changer un des deux signes.</p>`;
         return `<p class="step">• Remplace : ${fois(q.e[0][0], q.e[1][0])} + ${fois(q.e[0][1], q.e[1][1])} = 0.</p><p class="step">• Puis résous l’équation.</p>`;
       },
