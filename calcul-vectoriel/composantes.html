@@ -2264,13 +2264,89 @@ register({
    Outil 2, onglet 3 : vecteurs colinéaires (p. 11-13)
    critère xu·yv = xv·yu et écriture v = k·u ; trouver a ; points alignés
    ===================================================================== */
-// composante connue (fraction) ou inconnue 'a'
-const ent = x => x === 'a' ? '<i>a</i>' : fh(x);
-const entP = x => x === 'a' ? '<i>a</i>' : fp(x);
-const cvA = e => cvS(ent(e[0]), ent(e[1]));
-const fois = (p, q) => `${entP(p)}&thinsp;·&thinsp;${entP(q)}`;
+// composante connue (fraction), inconnue 'a' (Orthogonaux) ou expression p·a + q ({ p, q }, ex. a + 2, 2a − 1)
+const estA = x => x === 'a' || (x && x.p !== undefined);
+const aff = x => x === 'a' ? { p: F(1), q: F(0) } : estA(x) ? x : { p: F(0), q: x };
+const affA = (p, q = 0) => ({ p: fr(p), q: fr(q) });
 // c·a écrit « 3a », « −a », « a »
 const coefA = c => (feq(c, F(1)) ? '' : feq(c, F(-1)) ? MINUS : fh(c)) + '<i>a</i>';
+// « 2a − 1 », « a + 3 », « 5 » (un nombre seul si p = 0)
+function affHTML(x) {
+  const { p, q } = aff(x);
+  if (!p.n) return fh(q);
+  return coefA(p) + (q.n ? ` ${q.n < 0 ? MINUS : '+'} ${fh(F(Math.abs(q.n), q.d))}` : '');
+}
+const aSeul = x => { const { p, q } = aff(x); return feq(p, F(1)) && !q.n; };
+const ent = x => estA(x) ? affHTML(x) : fh(x);
+const entP = x => estA(x) ? (aSeul(x) ? '<i>a</i>' : `(${affHTML(x)})`) : fp(x);
+const cvA = e => cvS(ent(e[0]), ent(e[1]));
+const fois = (p, q) => `${entP(p)}&thinsp;·&thinsp;${entP(q)}`;
+// produit de deux expressions dont une au plus contient a → expression p·a + q
+function amul(x, y) {
+  x = aff(x); y = aff(y);
+  return { p: fadd(fmul(x.p, y.q), fmul(y.p, x.q)), q: fmul(x.q, y.q) };
+}
+// somme de termes { k, a } : « 3a − 2a », « 12 − 6 » (termes nuls omis)
+function somme(t) {
+  t = t.filter(x => x.k.n);
+  if (!t.length) return '0';
+  return t.map((x, i) => {
+    const ab = F(Math.abs(x.k.n), x.k.d), m = x.a ? coefA(ab) : fh(ab);
+    return i === 0 ? (x.k.n < 0 ? MINUS : '') + m : ` ${x.k.n < 0 ? MINUS : '+'} ${m}`;
+  }).join('');
+}
+// valeur d'une composante pour une valeur de a
+const evalA = (x, a) => estA(x) ? fadd(fmul(aff(x).p, a), aff(x).q) : x;
+// équation des produits en croix xu·yv = xv·yu, ramenée à c·a = n
+function equationA(e) {
+  const g = amul(e[0][0], e[1][1]), d = amul(e[1][0], e[0][1]);
+  return { g, d, c: fsub(g.p, d.p), n: fsub(d.q, g.q) };
+}
+const FRACS = [F(1, 2), F(-1, 2), F(3, 2), F(-3, 2), F(5, 2), F(1, 3), F(2, 3), F(-2, 3), F(4, 3), F(1, 4), F(3, 4), F(-3, 4)];
+// « Trouver a » (Colinéaires et Orthogonaux) : u et v avec l'inconnue a dans v ;
+// equation(e) ramène la condition à c·a = n
+function genereA(equation) {
+  // simple : a seul (40 %) ; fraction : des fractions dans l'énoncé (30 %) ;
+  // decale : a + 2, a − 3… (20 %) ; double : a dans les deux composantes de v (10 %)
+  // a est toujours dans v (u est dessiné dès le départ) et l'équation a toujours une seule solution
+  const r = Math.random(), genre = r < .4 ? 'simple' : r < .7 ? 'fraction' : r < .9 ? 'decale' : 'double';
+  for (;;) {
+    let e;
+    if (genre === 'double') {
+      const [p1, p2] = pick([[1, 1], [1, 1], [1, 2], [2, 1]]);
+      e = [vecPlein(5, 2), [affA(p1, rnd(-5, 5)), affA(p2, rnd(-5, 5))]];
+      if (!e[1][0].q.n && !e[1][1].q.n) continue;
+    } else {
+      const x = () => genre === 'fraction' && Math.random() < .45 ? pick(FRACS) : F(nz(-6, 6));
+      e = genre === 'fraction' ? [[x(), x()], [x(), x()]] : [vecPlein(6, 2), vecPlein(8, 2)];
+      const j = rnd(0, 1);
+      e[1][j] = affA(1, genre === 'decale' ? nz(-5, 5) : 0);
+      if (genre === 'fraction' && ![...e[0], e[1][1 - j]].some(f => f.d > 1)) continue;
+    }
+    const { c, n } = equation(e);
+    if (!c.n) continue;
+    const a = fdiv(n, c), u = e[0].map(x => evalA(x, a)), v = e[1].map(x => evalA(x, a));
+    if (a.d > 6 || !a.n || Math.abs(num(a)) > 15 || vnul(v) || v.some(f => Math.abs(num(f)) > 15)) continue;
+    if (genre === 'simple' && fint(a) && Math.random() < .35) continue;          // quelques fractions
+    return { type: 'a', genre, e, a, u, v };
+  }
+}
+// dernière étape de la résolution : c·a = n → a (diviser, ou multiplier par l'inverse)
+// gauche : la ligne précédente est déjà « c·a = n » ; finale : remplit la réponse et anime la figure
+function etapeDiviser(steps, cc, nn, a, gauche, finale) {
+  if (feq(cc, F(1))) {
+    if (gauche) steps[steps.length - 1].run = finale;
+    else steps.push({ say: 'On lit la valeur de <i>a</i>.', write: `<i>a</i> = ${fh(a)}`, run: finale });
+  } else if (fint(cc)) {
+    // a = n / c (sans répéter la fraction quand elle est déjà simplifiée)
+    const deja = cc.n > 0 && fint(nn) && a.d === cc.n;
+    steps.push({ say: `On divise par ${fh(cc)}.`, write: `<i>a</i> = ${fint(nn) ? frS(fh(nn), fh(cc)) : `${fh(nn)} : ${fp(cc)}`}${deja ? '' : ` = ${fh(a)}`}`, run: finale });
+  } else {
+    // coefficient fractionnaire : on multiplie par son inverse
+    const inv = fdiv(F(1), cc);
+    steps.push({ say: `On multiplie par l’inverse de ${fh(cc)}, c’est-à-dire par ${fh(inv)}.`, write: `<i>a</i> = ${fp(nn)}&thinsp;·&thinsp;${fp(inv)} = ${fh(a)}`, run: finale });
+  }
+}
 // v = k·u ? renvoie k (fraction) ou null
 function kDe(u, v) {
   if (det(u, v).n) return null;
@@ -2375,23 +2451,7 @@ register({
       const colin = Math.random() < .5;
       if (lv === 1) { const p = paire(colin); return { type: 'test', ...p, vu: false }; }
       if (lv === 2) {
-        for (;;) {
-          const u = vecPlein(6, 2), v = vecPlein(8, 2), pos = rnd(2, 3);
-          // l'inconnue remplace une composante de v (u reste connu et dessiné) ; son coefficient ne doit pas être nul
-          const e = [[...u], [...v]], i = pos >> 1, j = pos & 1;
-          const [x1, y1] = u, [x2, y2] = v;
-          // x1·y2 = x2·y1
-          let c, n, a;
-          if (pos === 0) { c = y2; n = fmul(x2, y1); a = fdiv(n, c); }          // a·y2 = x2·y1
-          else if (pos === 1) { c = x2; n = fmul(x1, y2); a = fdiv(n, c); }     // x1·y2 = x2·a
-          else if (pos === 2) { c = y1; n = fmul(x1, y2); a = fdiv(n, c); }     // x1·y2 = a·y1
-          else { c = x1; n = fmul(x2, y1); a = fdiv(n, c); }                    // x1·a = x2·y1
-          if (!c.n || a.d > 6 || !a.n || Math.abs(num(a)) > 15) continue;
-          if (fint(a) && Math.random() < .35) continue;                           // quelques fractions
-          e[i][j] = 'a';
-          const vu = [[...u], [...v]]; vu[i][j] = a;
-          return { type: 'a', e, pos, c, n, a, u: vu[0], v: vu[1] };
-        }
+        return genereA(equationA);
       }
       for (;;) {
         const loin = Math.random() < .6, m = loin ? 14 : 6;
@@ -2515,8 +2575,8 @@ register({
           if (c.vides.length) return { empty: true, msg: 'Écris la valeur de a.' };
           if (!c.faux.length) { q.trouve = true; dessiner(null, true); play(poserV); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('u')} = ${cvF(q.u)} et ${vec('v')} = ${cvF(q.v)} sont parallèles.` }; }
           const ar = lire(ctx.q, 'a');
-          if (ar) { const e = q.e[1].map(x => x === 'a' ? ar : x); if (q.e[1].includes('a') && !vnul(e)) dessiner(e); }
-          return { msg: `Avec cette valeur, les vecteurs ne sont pas colinéaires${q.e[1].includes('a') ? ' (ton vecteur en rouge)' : ''}. Écris ${XU}·${YV} = ${XV}·${YU} en remplaçant par les nombres.` };
+          if (ar) { const e = q.e[1].map(x => evalA(x, ar)); if (!vnul(e)) dessiner(e); }
+          return { msg: `Avec cette valeur, les vecteurs ne sont pas colinéaires (ton vecteur en rouge). Écris ${XU}·${YV} = ${XV}·${YU} en remplaçant par les nombres.` };
         }
         const c = corriger(ctx.q, { abx: q.AB[0], aby: q.AB[1], acx: q.AC[0], acy: q.AC[1] }), ch = choixDe(ctx.q, 'c');
         if (c.vides.length || !ch) return { empty: true, msg: 'Complète les composantes et choisis Oui ou Non.' };
@@ -2542,7 +2602,13 @@ register({
           [`Calcule les deux produits en croix : ${XU}·${YV} = ${prod(q.u[0], q.v[1])} et ${XV}·${YU} = ${prod(q.v[0], q.u[1])}.`,
            `S’ils sont égaux, les vecteurs sont colinéaires ; sinon, ils ne le sont pas.`,
            `S’ils sont colinéaires, k est le nombre par lequel on multiplie <b>chaque</b> composante de ${vec('u')} pour obtenir ${vec('v')}.`]);
-        if (q.type === 'a') return `<p class="step">• Remplace dans ${XU}·${YV} = ${XV}·${YU} : ${fois(q.e[0][0], q.e[1][1])} = ${fois(q.e[1][0], q.e[0][1])}.</p><p class="step">• Puis résous l’équation.</p>`;
+        if (q.type === 'a') {
+          const { g, d } = equationA(q.e), dev = q.e[1].some(x => estA(x) && !aSeul(x));
+          return `<p class="step">• Remplace dans ${XU}·${YV} = ${XV}·${YU} : ${fois(q.e[0][0], q.e[1][1])} = ${fois(q.e[1][0], q.e[0][1])}.</p>`
+            + (dev ? '<p class="step">• Distribue le nombre devant chaque parenthèse.</p>' : '')
+            + (g.p.n && d.p.n ? '<p class="step">• Il y a des <i>a</i> des deux côtés : regroupe-les d’un même côté.</p>' : '')
+            + '<p class="step">• Puis résous l’équation.</p>';
+        }
         return `<p class="step">• ${vec('AB')} = ${cvS('x<sub>B</sub> − x<sub>A</sub>', 'y<sub>B</sub> − y<sub>A</sub>')}, de même pour ${vec('AC')}.</p><p class="step">• Puis teste si ${vec('AB')} et ${vec('AC')} sont colinéaires.</p>`;
       },
       solve() {
@@ -2575,17 +2641,23 @@ register({
             run: () => copieU(null)
           });
         } else if (q.type === 'a') {
-          const [u, v] = q.e, x1 = u[0], y1 = u[1], x2 = v[0], y2 = v[1];
-          const gauche = q.pos === 0 || q.pos === 3;     // l'inconnue est dans x1·y2
+          const [u, v] = q.e, { g, d, c, n } = equationA(q.e);
+          const dev = v.some(x => estA(x) && !aSeul(x));       // des parenthèses à distribuer
+          const finale = async () => { remplir(ctx.q, 'a', q.a); dessiner(null, true); await poserV(); };
           steps.push({ say: 'Colinéaires : les produits en croix sont égaux.', write: `${XU}·${YV} = ${XV}·${YU}`, run: () => wait(400) });
-          steps.push({ say: 'On remplace par les composantes.', write: `${fois(x1, y2)} = ${fois(x2, y1)}`, run: () => wait(400) });
-          steps.push({ say: 'On calcule le produit connu.', write: gauche ? `${coefA(q.c)} = ${fh(q.n)}` : `${fh(q.n)} = ${coefA(q.c)}`, run: () => wait(400) });
-          steps.push({ say: `On divise par ${fh(q.c)}.`, write: `<i>a</i> = ${frS(fh(q.n), fh(q.c))} = ${fh(q.a)}`,
-            run: async () => {
-              remplir(ctx.q, 'a', q.a);
-              dessiner(null, true);
-              await poserV();
-            } });
+          steps.push({ say: 'On remplace par les composantes.', write: `${fois(u[0], v[1])} = ${fois(v[0], u[1])}`, run: () => wait(400) });
+          steps.push({ say: dev ? 'On distribue (on multiplie chaque terme de la parenthèse).' : 'On calcule le produit connu.',
+            write: `${affHTML(g)} = ${affHTML(d)}`, run: () => wait(400) });
+          // a d'un seul côté et seul de son côté : on garde ce côté ; sinon on regroupe les a à gauche
+          const regrouper = !!(g.p.n && d.p.n) || !!(g.p.n && g.q.n) || !!(d.p.n && d.q.n);
+          const gauche = regrouper || !!g.p.n, cc = regrouper ? c : g.p.n ? g.p : d.p, nn = regrouper ? n : g.p.n ? d.q : g.q;
+          if (regrouper) {
+            const tg = [{ k: g.p, a: 1 }, { k: fneg(d.p), a: 1 }].filter(x => x.k.n), td = [{ k: d.q }, { k: fneg(g.q) }].filter(x => x.k.n);
+            steps.push({ say: 'On regroupe les <i>a</i> à gauche et les nombres à droite : en changeant de côté, un terme change de signe.',
+              write: `${somme(tg)} = ${somme(td)}`, run: () => wait(400) });
+            if (tg.length > 1 || td.length > 1) steps.push({ say: 'On réduit chaque membre.', write: `${coefA(cc)} = ${fh(nn)}`, run: () => wait(400) });
+          }
+          etapeDiviser(steps, cc, nn, q.a, gauche, finale);
         } else {
           const { A, B, C, AB, AC } = q, p1 = fmul(AB[0], AC[1]), p2 = fmul(AC[0], AB[1]);
           steps.push({ say: `Composantes de ${vec('AB')} : extrémité − origine.`, write: `${vec('AB')} = ${cvS(`${fh(B[0])} − ${fp(A[0])}`, `${fh(B[1])} − ${fp(A[1])}`)} = ${cvF(AB)}`,
@@ -2613,6 +2685,12 @@ register({
    Outil 2, onglet 4 : vecteurs orthogonaux (p. 14-16)
    critère xu·xv + yu·yv = 0 ; construire un vecteur orthogonal ; trouver a
    ===================================================================== */
+// orthogonaux : xu·xv + yu·yv = 0, ramenée à c·a = n
+function equationO(e) {
+  const g = amul(e[0][0], e[1][0]), d = amul(e[0][1], e[1][1]);
+  return { g, d, c: fadd(g.p, d.p), n: fneg(fadd(g.q, d.q)) };
+}
+
 register({
   id: 'c4', title: 'Vecteurs orthogonaux', short: 'Orthogonaux',
   accent: '#3B5C76', bg: '#EEF1F4',
@@ -2719,16 +2797,7 @@ register({
         const u = Math.random() < .25 ? V(F(nz(-5, 5), 2), nz(-4, 4)) : vecAlea(5);
         return vnul(u) ? genere() : { type: 'construire', u };
       }
-      for (;;) {
-        const u = vecPlein(6, 2), v = vecPlein(8, 2), pos = rnd(2, 3);
-        // x1·x2 + y1·y2 = 0, l'inconnue remplace x2 (pos 2) ou y2 (pos 3)
-        const c = pos === 2 ? u[0] : u[1], n = pos === 2 ? fmul(u[1], v[1]) : fmul(u[0], v[0]), a = fdiv(fneg(n), c);
-        if (!c.n || !a.n || a.d > 6 || Math.abs(num(a)) > 15) continue;
-        if (fint(a) && Math.random() < .35) continue;
-        const e = [[...u], [...v]]; e[1][pos - 2] = 'a';
-        const vv = [...v]; vv[pos - 2] = a;
-        return { type: 'a', e, pos, c, n, a, u, v: vv };
-      }
+      return genereA(equationO);
     }
     function poser() {
       let h;
@@ -2792,7 +2861,7 @@ register({
         if (c.vides.length) return { empty: true, msg: 'Écris la valeur de a.' };
         if (!c.faux.length) { play(() => poserV(q.v)); return { ok: true, msg: `<i>a</i> = ${fh(q.a)} : ${vec('v')} = ${cvF(q.v)} est orthogonal à ${vec('u')}.` }; }
         const ar = lire(ctx.q, 'a');
-        if (ar) { const e = q.e[1].map(x => x === 'a' ? ar : x); if (!vnul(e)) dessiner(e); }
+        if (ar) { const e = q.e[1].map(x => evalA(x, ar)); if (!vnul(e)) dessiner(e); }
         return { msg: `Avec cette valeur, l’angle n’est pas droit (ton vecteur en rouge). Remplace dans ${XU}·${XV} + ${YU}·${YV} = 0.` };
       },
       hint() {
@@ -2800,7 +2869,10 @@ register({
           [`Multiplie les premières composantes, puis les deuxièmes : ${XU}·${XV} = ${prod(q.u[0], q.v[0])} et ${YU}·${YV} = ${prod(q.u[1], q.v[1])}.`,
            `Additionne les deux produits : si la somme vaut 0, les vecteurs sont orthogonaux ; sinon, ils ne le sont pas.`]);
         if (q.type === 'construire') return `<p class="step">• Il faut ${fp(q.u[0])}·${XV} + ${fp(q.u[1])}·${YV} = 0.</p><p class="step">• Essaie d’échanger les composantes de ${vec('u')} et de changer un des deux signes.</p>`;
-        return `<p class="step">• Remplace : ${fois(q.e[0][0], q.e[1][0])} + ${fois(q.e[0][1], q.e[1][1])} = 0.</p><p class="step">• Puis résous l’équation.</p>`;
+        return `<p class="step">• Remplace : ${fois(q.e[0][0], q.e[1][0])} + ${fois(q.e[0][1], q.e[1][1])} = 0.</p>`
+          + (q.e[1].some(x => estA(x) && !aSeul(x)) ? '<p class="step">• Distribue le nombre devant chaque parenthèse.</p>' : '')
+          + (q.e[1].every(estA) ? '<p class="step">• Il y a deux termes en <i>a</i> : réduis-les.</p>' : '')
+          + '<p class="step">• Puis résous l’équation.</p>';
       },
       solve() {
         const steps = [];
@@ -2838,17 +2910,23 @@ register({
           const [u, v] = q.e;
           steps.push({ say: 'Orthogonaux : la somme des produits est nulle.', write: `${XU}·${XV} + ${YU}·${YV} = 0`, run: () => wait(400) });
           steps.push({ say: 'On remplace par les composantes.', write: `${fois(u[0], v[0])} + ${fois(u[1], v[1])} = 0`, run: () => wait(400) });
-          const termeA = coefA(q.c), autre = q.n;
-          steps.push({ say: 'On calcule le produit connu.', write: q.pos === 2 ? `${termeA} + ${fp(autre)} = 0` : `${fh(autre)} + ${termeA} = 0`, run: () => wait(400) });
-          steps.push({ say: `On isole <i>a</i>.`, write: `${termeA} = ${fh(fneg(autre))} &nbsp; <i>a</i> = ${frS(fh(fneg(autre)), fh(q.c))} = ${fh(q.a)}`,
-            run: async () => {
-              remplir(ctx.q, 'a', q.a);
-              dessiner(null, true); clear(L.main, L.aide);
-              const S = V(0, 0);
-              R.fleche(L.main, S, q.u, { color: COL_U }); R.nom(L.main, S, q.u, 'u', COL_U);
-              await grow(R.fleche(L.main, S, S, { color: COL_V }), R.px(S), R.px(q.v), 900);
-              clear(L.main); paire(S, q.u, q.v);
-            } });
+          const { g, d, c, n } = equationO(q.e), dev = v.some(x => estA(x) && !aSeul(x));
+          const finale = async () => {
+            remplir(ctx.q, 'a', q.a);
+            dessiner(null, true); clear(L.main, L.aide);
+            const S = V(0, 0);
+            R.fleche(L.main, S, q.u, { color: COL_U }); R.nom(L.main, S, q.u, 'u', COL_U);
+            await grow(R.fleche(L.main, S, S, { color: COL_V }), R.px(S), R.px(q.v), 900);
+            clear(L.main); paire(S, q.u, q.v);
+          };
+          const termes = [{ k: g.p, a: 1 }, { k: g.q }, { k: d.p, a: 1 }, { k: d.q }].filter(x => x.k.n);
+          steps.push({ say: dev ? 'On distribue (on multiplie chaque terme de la parenthèse).' : 'On calcule le produit connu.',
+            write: `${somme(termes)} = 0`, run: () => wait(400) });
+          // plusieurs termes en a, ou plusieurs nombres : on réduit
+          if (termes.filter(x => x.a).length > 1 || termes.filter(x => !x.a).length > 1)
+            steps.push({ say: 'On réduit.', write: `${somme([{ k: c, a: 1 }, { k: fneg(n) }])} = 0`, run: () => wait(400) });
+          steps.push({ say: 'On isole <i>a</i> : le nombre change de côté, et donc de signe.', write: `${coefA(c)} = ${fh(n)}`, run: () => wait(400) });
+          etapeDiviser(steps, c, n, q.a, true, finale);
         }
         return { reset, steps };
       }
