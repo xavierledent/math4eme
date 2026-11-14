@@ -124,7 +124,7 @@ button, input { font: inherit; }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 50% { box-shadow: 0 0 0 7px transparent; } }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 
-.fb { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 14.5px; line-height: 1.5; display: none; }
+.fb { margin-top: 12px; padding: 12px 14px; border-radius: 10px; font-size: 14.5px; line-height: 1.5; display: none; }
 .fb.show { display: block; animation: reveal .4s cubic-bezier(.2,.9,.3,1.15); }
 .fb.ok { background: var(--ok-bg); border-left: 4px solid var(--ok); }
 .fb.ko { background: var(--ko-bg); border-left: 4px solid var(--ko); }
@@ -141,18 +141,26 @@ button, input { font: inherit; }
 .fig-tip { font: 400 12.5px/1.4 var(--ui); color: var(--ink2); text-align: center; margin: 4px 0 2px; }
 .fig-tools { display: flex; gap: 8px; justify-content: center; margin: 2px 0 6px; flex-wrap: wrap; }
 .fig-tools:empty { display: none; }
-.figure-card:has(.stepbar) svg { max-height: calc(100vh - 300px); }
 .en-correction > :not(.stepbar) { display: none; }
-.stepbar { width: 100%; background: var(--bg); border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 12px; padding: 10px 14px; }
-.stepbar .say { font-size: 16px; line-height: 1.55; text-align: center; min-height: 2.4em; animation: reveal .35s ease; }
+/* correction pas à pas : un seul bloc (calcul écrit, phrase, navigation), sous la réponse */
+.stepbar { width: 100%; margin-top: 12px; background: var(--bg); border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent); border-left: 4px solid var(--accent); border-radius: 12px; padding: 10px 14px; }
+.stepbar[hidden] { display: none; }
+.figure-card > .stepbar { margin: 0 0 8px; }
+.corr-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.corr-tete b { font: 700 12px var(--ui); color: var(--accent); text-transform: uppercase; letter-spacing: .5px; }
+.calcs-zone { margin-top: 6px; padding: 4px 8px; background: #fff; border-radius: 8px; max-height: 32vh; overflow-y: auto; overscroll-behavior: contain; }
+.calcs-zone:empty { display: none; }
+/* pendant la correction : seuls « Autre question » et « Nouvelle figure » restent sous le bloc */
+body.corrige #bCheck, body.corrige #bHint, body.corrige #bSolve, body.corrige .score { display: none; }
+.stepbar .say { margin-top: 8px; font-size: 16px; line-height: 1.55; text-align: left; min-height: 2.4em; animation: reveal .35s ease; }
 .stepbar .say .sub { color: var(--ink2); font-size: .9em; }
 .stepbar .nav { display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .stepbar .count { font: 600 12px var(--ui); color: var(--ink2); min-width: 72px; text-align: center; }
 .stepbar .btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
-.fb .calcs { font-size: 16px; margin: 3px 0 0; line-height: 1.9; }
-.fb .calc { display: inline-block; padding: 0 6px; border-radius: 6px; line-height: 1.6; }
-.fb .calc.item + .calc.item { margin-left: .8em; }
-.fb .calc.new { background: color-mix(in srgb, var(--accent) 13%, #fff); animation: reveal .35s ease; }
+.stepbar .calcs { font-size: 16px; margin: 3px 0 0; line-height: 1.9; }
+.stepbar .calc { display: inline-block; padding: 0 6px; border-radius: 6px; line-height: 1.6; }
+.stepbar .calc.item + .calc.item { margin-left: .8em; }
+.stepbar .calc.new { background: color-mix(in srgb, var(--accent) 13%, #fff); animation: reveal .35s ease; }
 .fig-tools .btn { font-size: 12.5px; padding: 7px 12px; }
 
 /* ---------- math notation ---------- */
@@ -250,9 +258,9 @@ button, input { font: inherit; }
   .figure-card { position: relative; top: 0; min-height: 0; display: flex; flex-direction: column; }
   .fig-tools, .fig-tip { flex: none; }
   #fig { flex: 1 1 0; min-height: 0; }
-  .figure-card svg, .figure-card:has(.stepbar) svg { width: 100%; height: 100%; max-height: none; }
-  /* zone dédiée aux retours, sous la figure : la figure se réduit, le cadre défile seul s'il est long */
-  .figure-card > .fb { flex: none; max-height: 42%; overflow-y: auto; overscroll-behavior: contain; margin: 8px 4px 0; }
+  .figure-card svg { width: 100%; height: 100%; max-height: none; }
+  /* les retours et la correction sont dans le panneau de gauche : la figure garde toute la hauteur */
+  .figure-card > .stepbar { flex: none; max-height: 45%; overflow-y: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -428,6 +436,8 @@ a.sous-titre-site:hover{text-decoration:underline}
     <div class="levels" id="levels"></div>
     <p class="consigne" id="consigne"></p>
     <div class="question" id="question"></div>
+    <!-- correction pas à pas : sous la réponse (sur écran étroit, elle passe au-dessus de la figure) -->
+    <div class="stepbar" id="corr" hidden></div>
     <div class="actions">
       <button class="btn primary" id="bCheck">✓ Vérifier</button>
       <button class="btn" id="bHint">💡 Indice</button>
@@ -435,12 +445,12 @@ a.sous-titre-site:hover{text-decoration:underline}
       <button class="btn" id="bNext">↻ Autre question</button>
       <button class="btn" id="bNew">⟳ Nouvelle figure</button>
     </div>
+    <div class="fb" id="fb" aria-live="polite"></div>
     <div class="score" id="score"></div>
   </section>
   <section class="node figure-card">
     <div class="fig-tools" id="figTools"></div>
     <div id="fig"></div>
-    <div class="fb" id="fb" aria-live="polite"></div>
     <p class="fig-tip" id="figTip"></p>
   </section>
 </main>
@@ -871,12 +881,74 @@ function feedback(type, title, html) {
   const fb = $('fb'), cls = 'fb show ' + type;
   if (fb.className !== cls) { fb.className = 'fb'; void fb.offsetWidth; fb.className = cls; }   // pas de clignotement pendant une correction
   fb.innerHTML = (title ? `<b class="t">${title}</b>` : '') + (html || '');
-  // sur grand écran, le cadre de retour défile seul : pendant la correction, on montre la dernière ligne
-  fb.scrollTop = type === 'sol' ? fb.scrollHeight : 0;
-  const bas = Math.min(innerHeight, fb.closest('.figure-card').getBoundingClientRect().bottom);
+  // le retour est sous la réponse, dans le panneau (qui défile seul sur grand écran) : on le rend visible
+  const bas = Math.min(innerHeight, fb.closest('.panel').getBoundingClientRect().bottom);
   if (fb.getBoundingClientRect().bottom > bas) fb.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
 }
 function clearFeedback() { $('fb').className = 'fb'; $('fb').innerHTML = ''; }
+
+/* ---------- correction pas à pas : un seul bloc « le cahier » ----------
+   La phrase de l'étape, le calcul écrit ligne par ligne et la navigation sont ensemble, sous la réponse
+   de l'élève (panneau de gauche) ; la figure, à droite, garde toute la hauteur. Sur écran étroit (une
+   colonne), le bloc passe juste au-dessus de la figure, pour qu'on voie les deux à la fois. */
+const LARGE = '(min-width: 961px)';
+function placerCorrection() {
+  const c = $('corr');
+  if (matchMedia(LARGE).matches) { if (c.previousElementSibling !== $('question')) $('question').after(c); }
+  else if (c.nextElementSibling !== $('figTools')) $('figTools').before(c);
+}
+addEventListener('resize', () => { if (!$('corr').hidden) placerCorrection(); });
+function finCorrection() {
+  const c = $('corr');
+  c.hidden = true; c.innerHTML = '';
+  document.body.classList.remove('corrige');
+  $('figTools').classList.remove('en-correction');
+}
+// construit le bloc une fois, puis le met à jour sur place (rien ne clignote d'une étape à l'autre)
+function blocCorrection(i, n) {
+  const bar = $('corr');
+  if (!bar.firstChild) {
+    bar.innerHTML = '<div class="corr-tete"><b>▶ Correction</b><span class="count"></span></div>'
+      + '<div class="calcs-zone"></div><div class="say" aria-live="polite"></div>'
+      + '<div class="nav"><button class="btn" id="sPrev">◀ Précédent</button><button class="btn" id="sAgain">↻ Rejouer</button>'
+      + '<button class="btn go" id="sNext"></button></div>';
+    $('sPrev').onclick = () => showStep(App.sol.i - 1);
+    $('sAgain').onclick = () => showStep(App.sol.i);
+    $('sNext').onclick = () => showStep(App.sol.i + 1);
+  }
+  bar.hidden = false;
+  placerCorrection();
+  clearFeedback();
+  document.body.classList.add('corrige');
+  $('figTools').classList.add('en-correction');     // les outils de la figure sont masqués pendant la correction
+  const sol = App.sol, say = bar.querySelector('.say');
+  if (say.innerHTML !== sol.steps[i].say) {
+    say.innerHTML = sol.steps[i].say;
+    say.classList.remove('change'); void say.offsetWidth; say.classList.add('change');
+  }
+  bar.querySelector('.count').textContent = `Étape ${i + 1} / ${n}`;
+  $('sPrev').disabled = !i;
+  $('sNext').disabled = i >= n - 1;
+  $('sNext').textContent = i < n - 1 ? 'Étape suivante ▶' : 'Terminé ✓';
+  // Calcul écrit, juste au-dessus de la phrase : une égalité qui commence par « = » continue la ligne
+  // précédente, et les lignes sans « = » (composantes d'un vecteur, nombre de graduations…) se suivent
+  // sur une même ligne ; la nouvelle ligne est surlignée.
+  const lines = sol.steps.slice(0, i + 1).map(st => st.write).filter(Boolean);
+  const rows = [], sansEgal = l => !/=/.test(l.replace(/<[^>]+>/g, ''));
+  let prev = null;
+  lines.forEach((l, j) => {
+    const item = sansEgal(l);
+    const html = `<span class="calc${item ? ' item' : ''}${j === lines.length - 1 ? ' new' : ''}">${l}</span>`;
+    if (rows.length && (/^\s*=/.test(l) || (item && prev === 'item'))) rows[rows.length - 1].push(html); else rows.push([html]);
+    prev = item ? 'item' : 'eq';
+  });
+  const zone = bar.querySelector('.calcs-zone');
+  zone.innerHTML = rows.map(r => `<p class="calcs">${r.join(' ')}</p>`).join('');
+  zone.scrollTop = zone.scrollHeight;
+  // le bloc entier visible dans le panneau
+  const bas = Math.min(innerHeight, (bar.closest('.panel') || bar.parentElement).getBoundingClientRect().bottom);
+  if (bar.getBoundingClientRect().bottom > bas) bar.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
+}
 
 function renderTabs() {
   $('tabs').innerHTML = '';
@@ -928,9 +1000,8 @@ function startLevel(lv) {
 }
 function newQuestion(sameFigure) {
   cancelAnim(); clearFeedback();
-  // fin de la correction : son bandeau disparaît, les outils de la figure reviennent
-  $('figTools').querySelector('.stepbar')?.remove();
-  $('figTools').classList.remove('en-correction');
+  // fin de la correction : son bloc disparaît, les outils de la figure reviennent
+  finCorrection();
   App.sol = null;
   App.solved = App.revealed = false;
   App.inst.next(sameFigure);
@@ -974,31 +1045,7 @@ function showStep(i) {
   const sol = App.sol, n = sol.steps.length;
   i = Math.max(0, Math.min(n - 1, i));
   sol.i = i;
-  // bandeau de la correction : son propre bloc (les autres outils sont masqués pendant la correction)
-  let bar = $('figTools').querySelector('.stepbar');
-  if (!bar) { bar = document.createElement('div'); bar.className = 'stepbar'; $('figTools').prepend(bar); }
-  $('figTools').classList.add('en-correction');
-  bar.innerHTML = `<div class="say">${sol.steps[i].say}</div><div class="nav">`
-    + `<button class="btn" id="sPrev"${i ? '' : ' disabled'}>◀ Précédent</button>`
-    + `<span class="count">Étape ${i + 1} / ${n}</span>`
-    + `<button class="btn" id="sAgain">↻ Rejouer</button>`
-    + `<button class="btn go" id="sNext"${i < n - 1 ? '' : ' disabled'}>${i < n - 1 ? 'Étape suivante ▶' : 'Terminé ✓'}</button></div>`;
-  $('sPrev').onclick = () => showStep(i - 1);
-  $('sAgain').onclick = () => showStep(i);
-  $('sNext').onclick = () => showStep(i + 1);
-  const lines = sol.steps.slice(0, i + 1).map(st => st.write).filter(Boolean);
-  // Calcul compact, pour laisser la place à la figure (retour à la ligne seulement si la place manque) :
-  // une égalité qui commence par « = » continue la ligne précédente, et les lignes sans « = »
-  // (composantes d'un vecteur, nombre de graduations…) se suivent sur une même ligne.
-  const rows = [], sansEgal = l => !/=/.test(l.replace(/<[^>]+>/g, ''));
-  let prev = null;
-  lines.forEach((l, j) => {
-    const item = sansEgal(l);
-    const html = `<span class="calc${item ? ' item' : ''}${j === lines.length - 1 ? ' new' : ''}">${l}</span>`;
-    if (rows.length && (/^\s*=/.test(l) || (item && prev === 'item'))) rows[rows.length - 1].push(html); else rows.push([html]);
-    prev = item ? 'item' : 'eq';
-  });
-  feedback('sol', '▶ Correction', rows.map(r => `<p class="step calcs">${r.join(' ')}</p>`).join(''));
+  blocCorrection(i, n);
   play(async () => {
     const S = sol.reset();
     animScale = 0;                           // les étapes déjà vues sont rejouées instantanément
@@ -2979,7 +3026,7 @@ boot('comp4');
     try {
       if (typeof App !== 'undefined' && App.m) {
         var n = App.level ? App.level[App.m.id] : null;
-        d.ex = App.m.id; d.onglet = App.m.short; if (n != null) d.niv = n;
+        d.ex = App.m.id; d.onglet = App.m.short; if (n != null) d.niv = n; if (App.m.nomNiveau) d.nomNiv = App.m.nomNiveau;
       }
     } catch (e) {}
     try { localStorage.setItem(cle, JSON.stringify(d)); } catch (e) {}
