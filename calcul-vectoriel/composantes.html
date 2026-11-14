@@ -1560,6 +1560,12 @@ const lireV = (box, k) => { const x = lire(box, k + 'x'), y = lire(box, k + 'y')
 
 /* ---------- hasard ---------- */
 const nz = (a, b) => { let x; do x = rnd(a, b); while (!x); return x; };
+// Tests (Colinéaires niveaux 1 et 3, Orthogonaux niveau 1) : 60 % de « oui » ; parmi les « non »,
+// un tiers sont « loin » (direction nettement différente), les autres « presque » (une composante décalée de 1)
+const PART_OUI = .6, PART_LOIN = 1 / 3;
+const longueur = a => Math.hypot(num(a[0]), num(a[1]));
+const sinAbs = (a, b) => Math.abs(num(det(a, b))) / (longueur(a) * longueur(b));    // 0 : colinéaires
+const cosAbs = (a, b) => Math.abs(num(scal(a, b))) / (longueur(a) * longueur(b));   // 0 : orthogonaux
 // Niveau 1 de Colinéaires et d'Orthogonaux : part des questions avec des fractions dans l'énoncé
 const PART_FRACTIONS_N1 = .3;
 const petiteFrac = () => pick([F(1, 2), F(-1, 2), F(3, 2), F(-3, 2), F(5, 2), F(1, 3), F(-1, 3), F(2, 3), F(-2, 3), F(4, 3), F(1, 4), F(3, 4)]);
@@ -2524,10 +2530,12 @@ register({
     const KS = [F(2), F(3), F(-1), F(-2), F(1, 2), F(-1, 2), F(3, 2), F(-3, 2), F(-3), F(2, 3)];
     // vecteur v colinéaire à u (k pris dans KS, composantes entières), ou « presque » colinéaire
     function paire(colin, m = 5) {
+      const loin = !colin && Math.random() < PART_LOIN, frac = false;
       for (;;) {
         const u = vecAlea(m), k = pick(KS), v = vscl(k, u);
         if (!fint(v[0]) || !fint(v[1]) || Math.abs(num(v[0])) > 9 || Math.abs(num(v[1])) > 9 || feq(k, F(1))) continue;
         if (colin) return { u, v, k };
+        if (loin) { const w = frac ? (Math.random() < .5 ? vecFrac() : vecAlea(4)) : vecAlea(6); if (!lisible(w) || (frac && !aDesFractions(u, w)) || sinAbs(u, w) < .4) continue; return { u, v: w, k: null }; }
         const w = Math.random() < .5 ? vadd(v, V(pick([-1, 1]), 0)) : vadd(v, V(0, pick([-1, 1])));
         if (vnul(w) || !det(u, w).n) continue;
         return { u, v: w, k: null };
@@ -2535,19 +2543,21 @@ register({
     }
     // même chose avec des fractions : u fractionnaire, ou u entier et k fractionnaire (v a alors des fractions)
     function paireFrac(colin) {
+      const loin = !colin && Math.random() < PART_LOIN, frac = true;
       for (;;) {
         const u = Math.random() < .5 ? vecFrac() : vecAlea(4);
         const k = pick(fint(u[0]) && fint(u[1]) ? [F(1, 2), F(-1, 2), F(3, 2), F(-3, 2), F(1, 3), F(2, 3), F(-2, 3)] : [F(2), F(-2), F(3), F(-1), F(1, 2), F(-3, 2), F(4)]);
         const v = vscl(k, u);
         if (!lisible(u) || !lisible(v) || !aDesFractions(u, v)) continue;
         if (colin) return { u, v, k };
+        if (loin) { const w = frac ? (Math.random() < .5 ? vecFrac() : vecAlea(4)) : vecAlea(6); if (!lisible(w) || (frac && !aDesFractions(u, w)) || sinAbs(u, w) < .4) continue; return { u, v: w, k: null }; }
         const w = Math.random() < .5 ? vadd(v, V(pick([-1, 1]), 0)) : vadd(v, V(0, pick([-1, 1])));
         if (vnul(w) || !det(u, w).n || !lisible(w)) continue;
         return { u, v: w, k: null };
       }
     }
     function genere() {
-      const colin = Math.random() < .5;
+      const colin = Math.random() < PART_OUI, loinC = !colin && Math.random() < PART_LOIN;
       if (lv === 1) { const p = Math.random() < PART_FRACTIONS_N1 ? paireFrac(colin) : paire(colin); return { type: 'test', ...p, vu: false }; }
       if (lv === 2) {
         return genereA(equationA);
@@ -2557,7 +2567,8 @@ register({
         const A = V(rnd(-m, m), rnd(-m, m)), d = vecPlein(loin ? 8 : 4, 2), k = pick([F(2), F(3), F(-1), F(-2), F(3, 2), F(5, 2)]);
         const B = vadd(A, d); let C = vadd(A, vscl(k, d));
         if (!fint(C[0]) || !fint(C[1])) continue;
-        if (!colin) C = vadd(C, Math.random() < .5 ? V(pick([-1, 1]), 0) : V(0, pick([-1, 1])));
+        if (loinC) { const e = vecPlein(loin ? 8 : 5, 2); if (sinAbs(d, e) < .4) continue; C = vadd(A, e); }
+        else if (!colin) C = vadd(C, Math.random() < .5 ? V(pick([-1, 1]), 0) : V(0, pick([-1, 1])));
         return { type: 'aligne', A, B, C, AB: vsub(B, A), AC: vsub(C, A), colin, vu: false };
       }
     }
@@ -2885,8 +2896,15 @@ register({
     function genere() {
       if (lv === 1) {
         const frac = Math.random() < PART_FRACTIONS_N1;      // fractions dans l'énoncé (environ 30 %)
+        const ortho = Math.random() < PART_OUI, loin = !ortho && Math.random() < PART_LOIN;
         for (;;) {
-          const u = frac && Math.random() < .6 ? vecFrac() : vecAlea(5), ortho = Math.random() < .5;
+          const u = frac && Math.random() < .6 ? vecFrac() : vecAlea(5);
+          if (loin) {
+            // « non » loin : un autre vecteur, nettement pas perpendiculaire
+            const v = frac && Math.random() < .5 ? vecFrac() : vecAlea(5);
+            if (!lisible(u) || !lisible(v) || (frac && !aDesFractions(u, v)) || cosAbs(u, v) < .4) continue;
+            return { type: 'test', u, v, ortho, vu: false };
+          }
           const c = frac ? pick(fint(u[0]) && fint(u[1]) ? [F(1, 2), F(-1, 2), F(3, 2), F(1, 3), F(-2, 3)] : [F(1), F(2), F(-1), F(-2), F(1, 2)]) : pick([1, 2, -1, -2, 1, 1]);
           let v = vscl(c, V(fneg(u[1]), u[0]));
           if (frac && (!lisible(u) || !lisible(v) || !aDesFractions(u, v))) continue;
