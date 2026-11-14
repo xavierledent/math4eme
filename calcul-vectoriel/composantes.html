@@ -1560,6 +1560,14 @@ const lireV = (box, k) => { const x = lire(box, k + 'x'), y = lire(box, k + 'y')
 
 /* ---------- hasard ---------- */
 const nz = (a, b) => { let x; do x = rnd(a, b); while (!x); return x; };
+// Niveau 1 de Colinéaires et d'Orthogonaux : part des questions avec des fractions dans l'énoncé
+const PART_FRACTIONS_N1 = .3;
+const petiteFrac = () => pick([F(1, 2), F(-1, 2), F(3, 2), F(-3, 2), F(5, 2), F(1, 3), F(-1, 3), F(2, 3), F(-2, 3), F(4, 3), F(1, 4), F(3, 4)]);
+// composantes lisibles : dénominateur 2, 3 ou 4 au plus, valeur entre −9 et 9
+const lisible = w => w.every(c => c.d <= 4 && Math.abs(c.n / c.d) <= 9 && Math.abs(c.n) <= 15);
+const aDesFractions = (...ws) => ws.some(w => w.some(c => c.d > 1));
+// vecteur non nul avec une composante fractionnaire (l'autre entière, parfois fractionnaire aussi)
+const vecFrac = () => { const a = petiteFrac(), b = Math.random() < .25 ? petiteFrac() : F(nz(-4, 4)); return Math.random() < .5 ? V(a, b) : V(b, a); };
 const vecAlea = (m = 6) => { let a; do a = V(rnd(-m, m), rnd(-m, m)); while (vnul(a) || !a[0].n && !a[1].n); return a; };
 // vecteur sans composante nulle (plus intéressant), en évitant les vecteurs trop courts
 const vecPlein = (m = 6, min = 2) => { let a; do a = V(nz(-m, m), nz(-m, m)); while (vlen(a) < min); return a; };
@@ -2525,9 +2533,22 @@ register({
         return { u, v: w, k: null };
       }
     }
+    // même chose avec des fractions : u fractionnaire, ou u entier et k fractionnaire (v a alors des fractions)
+    function paireFrac(colin) {
+      for (;;) {
+        const u = Math.random() < .5 ? vecFrac() : vecAlea(4);
+        const k = pick(fint(u[0]) && fint(u[1]) ? [F(1, 2), F(-1, 2), F(3, 2), F(-3, 2), F(1, 3), F(2, 3), F(-2, 3)] : [F(2), F(-2), F(3), F(-1), F(1, 2), F(-3, 2), F(4)]);
+        const v = vscl(k, u);
+        if (!lisible(u) || !lisible(v) || !aDesFractions(u, v)) continue;
+        if (colin) return { u, v, k };
+        const w = Math.random() < .5 ? vadd(v, V(pick([-1, 1]), 0)) : vadd(v, V(0, pick([-1, 1])));
+        if (vnul(w) || !det(u, w).n || !lisible(w)) continue;
+        return { u, v: w, k: null };
+      }
+    }
     function genere() {
       const colin = Math.random() < .5;
-      if (lv === 1) { const p = paire(colin); return { type: 'test', ...p, vu: false }; }
+      if (lv === 1) { const p = Math.random() < PART_FRACTIONS_N1 ? paireFrac(colin) : paire(colin); return { type: 'test', ...p, vu: false }; }
       if (lv === 2) {
         return genereA(equationA);
       }
@@ -2863,9 +2884,12 @@ register({
     /* ---------- questions ---------- */
     function genere() {
       if (lv === 1) {
+        const frac = Math.random() < PART_FRACTIONS_N1;      // fractions dans l'énoncé (environ 30 %)
         for (;;) {
-          const u = vecAlea(5), ortho = Math.random() < .5;
-          let v = vscl(pick([1, 2, -1, -2, 1, 1]), V(fneg(u[1]), u[0]));
+          const u = frac && Math.random() < .6 ? vecFrac() : vecAlea(5), ortho = Math.random() < .5;
+          const c = frac ? pick(fint(u[0]) && fint(u[1]) ? [F(1, 2), F(-1, 2), F(3, 2), F(1, 3), F(-2, 3)] : [F(1), F(2), F(-1), F(-2), F(1, 2)]) : pick([1, 2, -1, -2, 1, 1]);
+          let v = vscl(c, V(fneg(u[1]), u[0]));
+          if (frac && (!lisible(u) || !lisible(v) || !aDesFractions(u, v))) continue;
           if (!ortho) v = vadd(v, Math.random() < .5 ? V(pick([-1, 1]), 0) : V(0, pick([-1, 1])));
           if (vnul(v) || (!ortho && !scal(u, v).n) || Math.abs(num(v[0])) > 9 || Math.abs(num(v[1])) > 9) continue;
           return { type: 'test', u, v, ortho, vu: false };
