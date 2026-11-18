@@ -18,7 +18,7 @@
 <div class="reprendre" id="reprendre" hidden></div>
 <script>
 (function () {
-  var connus = {"calcul-vectoriel/vecteurs.html":"Chapitre 2","calcul-vectoriel/composantes.html":"Chapitre 2"}, d = null;
+  var connus = {"calcul-vectoriel/vecteurs.html":"Chapitre 2","calcul-vectoriel/composantes.html":"Chapitre 2","geometrie-analytique/droites.html":"Chapitre 3"}, d = null;
   try { d = JSON.parse(localStorage.getItem("site-4eme.dernier")); } catch (e) {}
   if (!d || !connus[d.href]) return;
   var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
@@ -34,6 +34,9 @@
 <li><a class="fiche" style="--accent:#A00058;--bg:#F9EDF3" href="calcul-vectoriel/index.html"><span class="rond">2</span>
     <span class="texte"><b>Calcul vectoriel</b><span>Vecteurs égaux, opposés et multiples, somme et relation de Chasles, composantes et norme, vecteurs colinéaires et orthogonaux.</span></span>
     <span class="etat">2 outils →</span></a></li>
+<li><a class="fiche" style="--accent:#EC6708;--bg:#FDF1E7" href="geometrie-analytique/index.html"><span class="rond">3</span>
+    <span class="texte"><b>Géométrie analytique plane</b><span>Équations d’une droite, coefficient angulaire, droites parallèles et perpendiculaires, intersections, distances, cercle et parabole.</span></span>
+    <span class="etat">1 outil →</span></a></li>
 </ul>
 </main>
 </body>
