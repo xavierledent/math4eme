@@ -101,6 +101,8 @@ button, input { font: inherit; }
 .ans:focus { outline: none; border-style: solid; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
 .ans.good { border: 2px solid var(--ok); background: var(--ok-bg); }
 .ans.bad { border: 2px solid var(--ko); background: var(--ko-bg); }
+/* case juste gardée après « Vérifier » : verrouillée */
+.ans.garde { border-style: solid; cursor: default; box-shadow: none; }
 .ans-wrap { display: inline-flex; flex-direction: column; align-items: center; }
 .ans-wrap .arrow-over { width: 64px; height: 9px; color: var(--accent); margin-bottom: 1px; }
 .slot {
@@ -931,7 +933,7 @@ function newQuestion(sameFigure) {
   if (inp && matchMedia('(pointer: fine)').matches) inp.focus();
 }
 function answerChanged() {
-  $('question').querySelectorAll('.ans').forEach(i => i.classList.remove('good', 'bad'));
+  $('question').querySelectorAll('.ans:not(.garde)').forEach(i => i.classList.remove('good', 'bad'));   // les cases gardées restent vertes
   if (!App.solved && $('fb').classList.contains('ko')) clearFeedback();
   if (!App.solved && App.inst && App.inst.edited) App.inst.edited();   // ex. effacer la réponse fausse dessinée
 }
