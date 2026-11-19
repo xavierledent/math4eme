@@ -503,12 +503,12 @@ body.corrige .clavier-eq, body.corrige .clav-bouton { display: none; }
 .choix.rel button { padding: 6px 10px; font-size: 14px; }
 .choix.garde { opacity: .9; }
 .choix.garde button { cursor: default; }
-/* « Lesquelles ? » : une grille, les équations dans une colonne, les trois boutons (∥, ⊥, ni) de même largeur dans l'autre */
+/* « Lesquelles ? » : une grille, les équations dans une colonne, les trois boutons (∥, ⊥, aucun) de même largeur dans l'autre */
 .famille { flex-basis: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; align-items: center; margin-top: 6px; }
 .fam-l { display: contents; }
 .fam-eq { font-size: 17px; white-space: nowrap; overflow-x: auto; }
 .choix.rel.court button { width: 42px; padding: 4px 0; text-align: center; font-size: 17px; white-space: nowrap; }
-.choix.rel.court button[data-v="ni"] { font-size: 14px; }
+.choix.rel.court button[data-v="ni"] { width: 62px; font-size: 14px; }
 /* la droite de départ : un encadré dans l'énoncé, un trait épais avec un halo sur la figure */
 .depart-q { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: #EEF1F4; border-left: 4px solid #3B5C76; border-radius: 8px; padding: 4px 10px; }
@@ -537,6 +537,11 @@ body.corrige .clavier-eq, body.corrige .clav-bouton { display: none; }
 .cadre-m .cm-mots { font: 600 .5em var(--ui); color: var(--ink2); }
 .cadre-m .cm-sous { font: 500 13px var(--ui); color: var(--ink2); margin-top: 4px; }
 @media (max-width: 560px) { .cadre-m .cm-calc { font-size: 20px; } }
+/* correction de l'équation : deux façons de terminer, au choix, côte à côte (pas l'une après l'autre) */
+.fourche { display: inline-flex; flex-wrap: wrap; align-items: stretch; gap: 6px 10px; vertical-align: top; }
+.fourche-c { display: inline-flex; flex-direction: column; gap: 2px; padding: 4px 10px; border: 1.5px dashed var(--line); border-radius: 10px; background: #fff; }
+.fourche-c small { font: 600 11px var(--ui); color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
+.fourche-ou { align-self: center; font: 700 14px var(--ui); color: var(--accent); }
 
 /* @PLEIN-ECRAN:CSS début : module partagé, repris par 4eme/src/build.mjs */
 .pe-bouton { flex: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
@@ -2380,7 +2385,7 @@ const pentePerp = m => m === null ? F(0) : fzero(m) ? null : fneg(fdiv(F(1), m))
 // une droite de pente m (null : verticale) passant par P
 const drPar = (P, m) => m === null ? drVerticale(P[0]) : drPente(P, m);
 // le choix parallèles / perpendiculaires / ni l'un ni l'autre
-const choixRel = (k, q, court) => `<span class="choix rel${court ? ' court' : ''}" data-k="${k}" role="group" aria-label="${q}"><button type="button" data-v="par" title="parallèles">${court ? '∥' : '∥ parallèles'}</button><button type="button" data-v="perp" title="perpendiculaires">${court ? '⊥' : '⊥ perpendiculaires'}</button><button type="button" data-v="ni" title="ni l’un ni l’autre">${court ? 'ni' : 'ni l’un ni l’autre'}</button></span>`;
+const choixRel = (k, q, court) => `<span class="choix rel${court ? ' court' : ''}" data-k="${k}" role="group" aria-label="${q}"><button type="button" data-v="par" title="parallèles">${court ? '∥' : '∥ parallèles'}</button><button type="button" data-v="perp" title="perpendiculaires">${court ? '⊥' : '⊥ perpendiculaires'}</button><button type="button" data-v="ni" title="ni l’un ni l’autre">${court ? 'aucun' : 'ni l’un ni l’autre'}</button></span>`;
 const relDe = (u, v) => estParallele(u, v) ? 'par' : estPerp(u, v) ? 'perp' : 'ni';
 const NOM_REL = { par: 'parallèles', perp: 'perpendiculaires', ni: 'ni parallèles, ni perpendiculaires' };
 // le choix juste est gardé (on ne peut plus le changer)
@@ -2782,7 +2787,7 @@ register({
       + '<span class="warn">Parallèles : même <i>m</i>. Perpendiculaires : <i>m</i>′ = −1/<i>m</i>. La figure apparaît après ta réponse.</span>',
     'Calcule le coefficient angulaire de <b>d</b>, puis celui d’une parallèle et celui d’une perpendiculaire à <b>d</b>.'
       + '<span class="warn">Tes droites seront tracées sur la figure, par le point P. Fractions avec / (ex. <b>−2/3</b>).</span>',
-    'Chaque droite est-elle parallèle à <b>d</b> (∥), perpendiculaire à <b>d</b> (⊥), ou ni l’un ni l’autre (<b>ni</b>) ? Les droites apparaissent après ta réponse.'
+    'Chaque droite est-elle parallèle à <b>d</b> (∥), perpendiculaire à <b>d</b> (⊥), ou ni l’un ni l’autre (<b>aucun</b>) ? Les droites apparaissent après ta réponse.'
   ][lv],
 
   create(ctx) {
@@ -3081,6 +3086,15 @@ register({
 // y − yP = m(x − xP), avec les nombres
 const formuleHTML = (P, m) => `<i>y</i> − ${fp(P[1])} = ${fh(m)}&thinsp;(<i>x</i> − ${fp(P[0])})`;
 
+// la forme ax + by + c = 0 de y = mx + p : −mx + y − p = 0, puis multipliée par le dénominateur commun s'il y a des fractions
+function formesFin(m, p) {
+  const t = [[fneg(m), 'x'], [F(1), 'y'], [fneg(p), '']];
+  const k = lcm(m.d, p.d);
+  if (k === 1) return { std: eqHTML(t, []), termes: t, frac: null, fois: null };
+  const ti = t.map(([v, n]) => [fmul(v, F(k)), n]);
+  return { std: eqHTML(ti, []), termes: ti, frac: eqHTML(t, []), fois: k };
+}
+
 register({
   id: 'd3', title: 'Équation cartésienne', short: 'Équation cartésienne',
   accent: '#EC6708', bg: '#FDF1E7',
@@ -3125,8 +3139,8 @@ register({
         h = `<div><i>m</i> = ${quotientHTML(w[1], w[0])} ; la droite passe par P${coordF(P)}</div>`
           + `<div class="gros">${formuleHTML(P, m)}</div>`
           + `<div>⟺ ${eqHTML([[1, 'y'], [fneg(P[1]), '']], [[m, 'x'], [fneg(fmul(m, P[0])), '']])}</div>`
-          + `<div>⟺ <b>${reduiteHTML(d)}</b> &nbsp;(<i>p</i> = ${fh(p)} : la droite coupe l’axe des <i>y</i> en ${fh(p)})</div>`
-          + `<div>⟺ ${eqHTML([[1, 'y'], [fneg(m), 'x'], [fneg(p), '']], [])}</div>`;
+          + `<div>⟺ <b>${reduiteHTML(d)}</b> &nbsp;<b>ou</b>&nbsp; <b>${formesFin(m, p).std}</b></div>`
+          + `<div>(<i>p</i> = ${fh(p)} : la droite coupe l’axe des <i>y</i> en ${fh(p)})</div>`;
       }
       document.getElementById('live').innerHTML = h;
       clear(L.aide, L.dr, L.esc, L.pts, L.top, L.poi);
@@ -3289,9 +3303,14 @@ register({
         steps.push({ say: `La droite passe par ${n}${coordF(P)} et a pour coefficient angulaire ${fh(m)} : on remplace dans <i>y</i> − <i>y</i><sub>${n}</sub> = <i>m</i>(<i>x</i> − <i>x</i><sub>${n}</sub>).`, write: formuleHTML(P, m),
           run: async () => { if (q.type === 'pente') await R.escalierAnim(L.esc, P, escEntier(m)); await grow(R.fleche(L.top, P, P, { color: COL_ELEVE, w: 2 }), R.px(P), R.px(vadd(P, escEntier(m))), 600); clear(L.top); tracerDroite(R, L.top, q.dr, { cls: 'juste' }); } });
         steps.push({ say: 'On distribue le coefficient angulaire.', write: eqHTML([[1, 'y'], [fneg(P[1]), '']], [[m, 'x'], [fneg(fmul(m, P[0])), '']]), run: () => wait(400) });
-        steps.push({ say: `On isole <i>y</i> : ${fp(P[1])} passe dans l’autre membre en changeant de signe.`, write: reduiteHTML(q.dr), run: () => wait(400) });
-        steps.push({ say: 'Et sous la forme <i>ax</i> + <i>by</i> + <i>c</i> = 0 : tous les termes dans le même membre.', write: eqHTML([[1, 'y'], [fneg(m), 'x'], [fneg(p), '']], []),
-          run: async () => { remplirEquation(ed, [[1, 'y'], [fneg(m), 'x'], [fneg(p), '']], []); marquerEquation(ctx.q, 'eq', 'good'); await wait(300); } });
+        // deux façons de terminer, au choix (pas l'une après l'autre) : à gauche tout dans le même membre (la forme
+        // du champ de réponse), à droite isoler y (choix du professeur)
+        const f = formesFin(m, p);
+        steps.push({ say: 'Deux façons de terminer, <b>au choix</b> (une seule suffit, les deux sont justes) : passer tous les termes dans le même membre (forme <i>ax</i> + <i>by</i> + <i>c</i> = 0'
+            + (f.fois ? `, puis on enlève les fractions en multipliant tout par ${f.fois})` : ')') + ', ou isoler <i>y</i> (forme <i>y</i> = <i>mx</i> + <i>p</i>).',
+          write: `<span class="fourche"><span class="fourche-c"><small>tout dans le même membre</small>${f.frac ? `<span>${f.frac}</span><span>× ${f.fois} : ${f.std}</span>` : `<span>${f.std}</span>`}</span>`
+            + `<span class="fourche-ou">ou</span><span class="fourche-c"><small>on isole <i>y</i></small><span>${reduiteHTML(q.dr)}</span></span></span>`,
+          run: async () => { remplirEquation(ed, f.termes, []); marquerEquation(ctx.q, 'eq', 'good'); await wait(300); } });
         return { reset, steps };
       }
     };
