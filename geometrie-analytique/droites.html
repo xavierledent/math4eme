@@ -514,6 +514,16 @@ body.corrige .clavier-eq, body.corrige .clav-bouton { display: none; }
 @media (max-width: 560px) { .clavier-eq { gap: 3px; } .clavier-eq .touche { min-height: 34px; font-size: 15px; } }
 /* signes des équations : un peu d'air autour de + et − */
 .question .op, .live .op, .stepbar .op, .fb .op { margin: 0 .24em; }
+/* la case du calcul de m, figée en haut à droite de la figure (onglet « Coefficient angulaire ») */
+#fig { position: relative; }
+.cadre-m { position: absolute; top: 8px; right: 8px; z-index: 2; pointer-events: none; max-width: 60%;
+  background: rgba(255, 255, 255, .94); border: 1.5px solid var(--line); border-top: 4px solid var(--accent); border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(27, 42, 74, .12); padding: 8px 14px; font-family: "Source Serif 4", Georgia, serif; color: var(--ink); }
+.cadre-m .cm-calc { font-size: 26px; white-space: nowrap; }
+.cadre-m .cm-calc .fr { font-size: 1em; }
+.cadre-m .cm-mots { font: 600 .5em var(--ui); color: var(--ink2); }
+.cadre-m .cm-sous { font: 500 13px var(--ui); color: var(--ink2); margin-top: 4px; }
+@media (max-width: 560px) { .cadre-m .cm-calc { font-size: 20px; } }
 
 /* @PLEIN-ECRAN:CSS début : module partagé, repris par 4eme/src/build.mjs */
 .pe-bouton { flex: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
@@ -2328,7 +2338,13 @@ function droiteAlea(opt = {}) {
     let d;
     if (r < (opt.vert ?? .05)) d = V(0, 1);
     else if (r < (opt.vert ?? .05) + (opt.horiz ?? .08)) d = V(1, 0);
-    else { const dx = pick([1, 1, 1, 2, 2, 3, 3, 4]), dy = nz(-5, 5); if (gcd(dx, dy) !== 1) continue; d = V(dx, dy); }
+    else {
+      // on ne retire que la direction : avant, chaque rejet relançait aussi le tirage horizontale / verticale,
+      // ce qui en gonflait la part (environ 10 % d'horizontales au lieu de 8 %)
+      let dx, dy;
+      do { dx = pick([1, 1, 1, 2, 2, 3, 3, 4]); dy = nz(-5, 5); } while (gcd(dx, dy) !== 1);
+      d = V(dx, dy);
+    }
     const m = d[0].n ? fdiv(d[1], d[0]) : null;
     if (m && Math.abs(num(m)) > 5) continue;
     return { A, d, dr: drPoints(A, vadd(A, d)), m };
@@ -2379,31 +2395,46 @@ function remplirEquation(ed, g, d) {
 function quotientHTML(n, d) {
   n = fr(n); d = fr(d);
   const m = fdiv(n, d), q = `<span class="fr"><span>${fh(n)}</span><span>${fh(d)}</span></span>`;
-  const memeEcriture = n.d === 1 && d.d === 1 && d.n > 0 && feq(m, F(n.n, d.n)) && Math.abs(m.n) === Math.abs(n.n);
-  return d.d === 1 && d.n === 1 ? fh(n) : memeEcriture ? q : `${q} = ${fh(m)}`;
+  // même quand on avance de 1, le calcul est montré (3/1 = 3)
+  const memeEcriture = n.d === 1 && d.d === 1 && d.n > 1 && feq(m, F(n.n, d.n)) && Math.abs(m.n) === Math.abs(n.n);
+  return memeEcriture ? q : `${q} = ${fh(m)}`;
 }
+// la case du calcul de m, figée en haut à droite de la figure (d : l'escalier [horizontal, vertical] ; null : l'enlever)
+function cadrePente(svg, d) {
+  const fig = svg.parentNode; if (!fig) return;
+  let c = fig.querySelector('.cadre-m');
+  if (!d) { if (c) c.remove(); return; }
+  if (!c) { c = document.createElement('div'); c.className = 'cadre-m'; fig.appendChild(c); }
+  const mots = '<span class="fr cm-mots"><span>vertical</span><span>horizontal</span></span>';
+  c.innerHTML = fzero(d[0])
+    ? `<div class="cm-calc"><i>m</i> = ${mots} = <span class="fr"><span>${fh(d[1])}</span><span>0</span></span></div><div class="cm-sous">On ne peut pas diviser par 0 :<br><b>pas de coefficient angulaire</b>.</div>`
+    : `<div class="cm-calc"><i>m</i> = ${mots} = ${quotientHTML(d[1], d[0])}</div>`;
+}
+// la phrase du « Bravo » : l'escalier dessiné (ses nombres sont sur la figure), puis le calcul
+const phraseEscalier = (d, ton) => fzero(d[0])
+  ? 'Déplacement horizontal nul : droite verticale, pas de coefficient angulaire.'
+  : `${ton ? 'Ton escalier' : 'L’escalier'} : horizontal ${signedF(d[0])}, vertical ${signedF(d[1])}, donc <i>m</i> = ${quotientHTML(d[1], d[0])}.`;
 
 /* =====================================================================
    Outil « La droite », onglet 1 : coefficient angulaire (fiche 3)
    lire sur le graphique (escalier), à partir de deux points ou d'un vecteur directeur, à partir de l'équation
    ===================================================================== */
-const montee = m => num(m) > 0 ? `on monte de ${fh(m)}` : num(m) < 0 ? `on descend de ${fh(fneg(m))}` : 'on ne monte pas (droite horizontale)';
 
 register({
   id: 'd1', title: 'Coefficient angulaire', short: 'Coefficient angulaire',
   accent: '#007C74', bg: '#EAF5F3',
   explorer: 'déplace A et B',
-  levels: [['Lire', 'sur le graphique'], ['Calculer', 'deux points, un vecteur'], ['Équation', 'à partir de l’équation']],
+  levels: [['Lire', 'graphique, vecteur directeur'], ['Calculer', 'deux points, équation'], ['Fractions', 'fractions, équations déguisées']],
   newLabel: () => null,
   nextLabel: lv => lv === 0 ? '↻ Nouveaux défis' : null,
   consigne: lv => [
-    'Fais glisser les points <b>A</b> et <b>B</b>. Observe l’escalier (horizontal, puis vertical) et le coefficient angulaire <i>m</i>, puis relève les défis.',
-    'Trouve le coefficient angulaire de la droite. Place deux points <b>sur des nœuds du quadrillage</b> de la droite : l’escalier apparaît.'
-      + '<span class="warn"><i>m</i> = déplacement vertical ÷ déplacement horizontal. Fractions avec / (ex. <b>−5/2</b>).</span>',
+    'Fais glisser les points <b>A</b> et <b>B</b>. Observe l’escalier (horizontal, puis vertical) et le calcul de <i>m</i> en haut à droite de la figure, puis relève les défis.',
+    'Trouve le coefficient angulaire de la droite. Sur le graphique : place deux points <b>sur des nœuds du quadrillage</b> de la droite, l’escalier apparaît.'
+      + '<span class="warn"><i>m</i> = déplacement vertical ÷ déplacement horizontal (avec un vecteur directeur : 2<sup>e</sup> composante ÷ 1<sup>re</sup>). Fractions avec / (ex. <b>−5/2</b>).</span>',
     'Calcule le coefficient angulaire de la droite.'
-      + '<span class="warn">Deux points : <i>m</i> = (y<sub>B</sub> − y<sub>A</sub>) ÷ (x<sub>B</sub> − x<sub>A</sub>). Vecteur directeur : 2<sup>e</sup> composante ÷ 1<sup>re</sup>. La figure apparaît après ta réponse.</span>',
-    'Trouve le coefficient angulaire de la droite à partir de son équation.'
-      + '<span class="warn">Sous la forme <i>ax</i> + <i>by</i> + <i>c</i> = 0 : vecteur directeur (−<i>b</i> ; <i>a</i>), donc <i>m</i> = −<i>a</i>/<i>b</i>. La figure apparaît après ta réponse.</span>'
+      + '<span class="warn">Deux points : <i>m</i> = (y<sub>B</sub> − y<sub>A</sub>) ÷ (x<sub>B</sub> − x<sub>A</sub>). Équation <i>ax</i> + <i>by</i> + <i>c</i> = 0 : <i>m</i> = −<i>a</i>/<i>b</i> ; <i>y</i> = <i>mx</i> + <i>p</i> : on lit <i>m</i>. La figure apparaît après ta réponse.</span>',
+    'Calcule le coefficient angulaire de la droite : des fractions, ou une équation à remettre d’abord sous la forme <i>ax</i> + <i>by</i> + <i>c</i> = 0.'
+      + '<span class="warn">Deux points : <i>m</i> = (y<sub>B</sub> − y<sub>A</sub>) ÷ (x<sub>B</sub> − x<sub>A</sub>). Vecteur directeur : 2<sup>e</sup> composante ÷ 1<sup>re</sup>. Équation : <i>m</i> = −<i>a</i>/<i>b</i>. La figure apparaît après ta réponse.</span>'
   ][lv],
 
   create(ctx) {
@@ -2430,8 +2461,6 @@ register({
       const d = vsub(B, A), m = mEx(), dr = veq(A, B) ? null : drPoints(A, B);
       let h = `<div class="gros">${vec('AB')} = ${cvF(d)}</div>`;
       if (veq(A, B)) h += '<div>A et B sont confondus : il faut deux points différents.</div>';
-      else if (!m) h += '<div><i>m</i> = ' + fh(d[1]) + ' ÷ 0 : <b>pas de coefficient angulaire</b> (droite verticale, on ne peut pas diviser par 0).</div>';
-      else h += `<div><i>m</i> = ${quotientHTML(d[1], d[0])} : quand on avance de 1 vers la droite, ${montee(m)}.</div>`;
       if (dr) {
         const e = entiersDe(dr);
         h += `<div>Équation : ${reduiteHTML(dr)} &nbsp;ou&nbsp; ${stdHTML(dr)}</div>`
@@ -2441,7 +2470,7 @@ register({
       clear(L.aide, L.dr, L.esc, L.pts, L.top, L.poi);
       if (dr) tracerDroite(R, L.dr, dr, { color: COL_D });
       if (!veq(A, B)) R.escalier(L.esc, A, d);
-      if (m && d[0].n !== d[0].d) R.escalier(L.esc, B, escPente(m), { cls: 'pas1' });       // le pas de 1, depuis B
+      cadrePente(ctx.svg, veq(A, B) ? null : d);        // le calcul de m, en grand (on lit l'escalier de A à B, pas le « pas de 1 »)
       R.point(L.pts, A, 'A' + coordTxtD(A), { dir: vnum(vscl(-1, d)), esc: [A, d] });
       R.point(L.pts, B, 'B' + coordTxtD(B), { dir: vnum(d) });
       anneau(R, L.poi, A, COL_D); anneau(R, L.poi, B, COL_D);
@@ -2449,34 +2478,56 @@ register({
     }
 
     /* ---------- questions ---------- */
+    // ordre des niveaux (19/11/2026, avec le professeur) : selon le travail demandé, pas selon ce qui est donné
+    //   1 : lire (graphique, ou vecteur directeur entier) ; 2 : calculer avec des entiers (deux points, équation
+    //   y = mx + p ou ax + by + c = 0) ; 3 : fractions et équations déguisées
     function genere() {
       if (lv === 1) {
+        if (Math.random() < .3) return vecteurQ(false);
         for (;;) {
-          const g = droiteAlea({ vert: .05, horiz: .08 });
+          const g = droiteAlea({ vert: .05, horiz: .03 });      // peu d'horizontales (choix du professeur)
           if (!R.inside(g.A, 1) || !R.inside(vadd(g.A, g.d), 1)) continue;
           return { type: 'lire', ...g };
         }
       }
       if (lv === 2) {
-        if (Math.random() < .25) {
-          // un vecteur directeur (parfois avec une fraction)
-          let v;
-          do v = Math.random() < .2 ? vecFrac() : V(rnd(-6, 6), rnd(-6, 6)); while (vnul(v) || (fzero(v[0]) && Math.random() > .25));
-          return { type: 'vecteur', v, m: fzero(v[0]) ? null : fdiv(v[1], v[0]), vu: false };
-        }
-        const frac = Math.random() < .25;
+        if (Math.random() < .55) return pointsQ(false);
         for (;;) {
-          const A = V(rnd(-8, 8), rnd(-6, 6));
-          let B = Math.random() < .05 ? V(A[0], rnd(-6, 6)) : V(rnd(-8, 8), rnd(-6, 6));
-          if (frac) B = vadd(B, Math.random() < .5 ? V(petiteFrac(), 0) : V(0, petiteFrac()));
-          const d = vsub(B, A);
-          if (vnul(d) || (d[0].n && Math.abs(num(d[1]) / num(d[0])) > 6) || vlen(d) < 2.5) continue;
-          const [nA, nB] = lettresPts(2);
-          return { type: 'points', A, B, nA, nB, d, m: fzero(d[0]) ? null : fdiv(d[1], d[0]), vu: false };
+          const g = droiteAlea({ vert: .05, horiz: .05 });
+          // y = mx + p seulement si m et p sont entiers ; sinon ax + by + c = 0
+          const p = ordDe(g.dr), entiers = g.m && g.m.d === 1 && p && p.d === 1;
+          const ec = ecriture(g.dr, entiers && Math.random() < .35 ? 'reduite' : 'std');
+          return { type: 'equation', dr: g.dr, m: g.m, ec, vu: false };
         }
       }
-      const g = droiteAlea({ vert: .05, horiz: .06 });
-      return { type: 'equation', dr: g.dr, m: g.m, ec: ecriture(g.dr), vu: false };
+      if (Math.random() < .5) return Math.random() < .3 ? vecteurQ(true) : pointsQ(true);
+      for (;;) {
+        const g = droiteAlea({ vert: .05, horiz: .04 });
+        const e = entiersDe(g.dr), formes = [];
+        if (e.b && Math.abs(e.b) > 1) formes.push('by', 'frac');
+        if (e.a && e.b) formes.push('melange', 'melange');
+        if (!formes.length) continue;                            // pas d'écriture déguisée possible : une autre droite
+        return { type: 'equation', dr: g.dr, m: g.m, ec: ecriture(g.dr, pick(formes)), vu: false };
+      }
+    }
+    // un vecteur directeur : composantes entières (niveau 1) ou avec une fraction (niveau 3) ; verticale rare
+    function vecteurQ(frac) {
+      let v;
+      do v = frac ? vecFrac() : V(rnd(-6, 6), rnd(-6, 6)); while (vnul(v) || (fzero(v[0]) && Math.random() > .25));
+      return { type: 'vecteur', v, m: fzero(v[0]) ? null : fdiv(v[1], v[0]), vu: false };
+    }
+    // deux points : coordonnées entières (niveau 2) ou avec des fractions (niveau 3)
+    function pointsQ(frac) {
+      for (;;) {
+        let A = V(rnd(-8, 8), rnd(-6, 6));
+        let B = Math.random() < .05 ? V(A[0], rnd(-6, 6)) : V(rnd(-8, 8), rnd(-6, 6));
+        const fx = () => Math.random() < .5 ? V(petiteFrac(), 0) : V(0, petiteFrac());
+        if (frac) { B = vadd(B, fx()); if (Math.random() < .4) A = vadd(A, fx()); }
+        const d = vsub(B, A);
+        if (vnul(d) || (d[0].n && Math.abs(num(d[1]) / num(d[0])) > 6) || vlen(d) < 2.5) continue;
+        const [nA, nB] = lettresPts(2);
+        return { type: 'points', A, B, nA, nB, d, m: fzero(d[0]) ? null : fdiv(d[1], d[0]), vu: false };
+      }
     }
     function poser() {
       P1 = P2 = null;
@@ -2559,7 +2610,7 @@ register({
       debug: () => ({ q, R, P1, P2 }),
       edited() { if (q) clear(L.top); },
       next() {
-        cancelAnim(); clear(L.top); R.base();
+        cancelAnim(); clear(L.top); R.base(); cadrePente(ctx.svg, null);
         if (lv === 0) return explorer();
         q = genere(); poser();
       },
@@ -2571,12 +2622,18 @@ register({
         if (q.type !== 'lire') { q.vu = true; dessiner(); }
         if (c.ok) {
           clear(L.top);
-          if (q.type === 'lire' && !(P1 && P2)) R.escalier(L.esc, q.A, q.d);
-          if (q.type === 'points') R.escalier(L.esc, q.A, q.d);
-          if (q.type === 'vecteur') R.escalier(L.esc, V(0, 0), q.v);
-          if (q.type === 'equation' && q.m !== null) R.escalier(L.esc, pointDe(q.dr), escEntier(q.m));
-          return { ok: true, msg: q.m === null ? 'Droite verticale : pas de coefficient angulaire.' : `<i>m</i> = ${fh(q.m)} : quand on avance de 1 vers la droite, ${montee(q.m)}.` };
+          // l'escalier dessiné sur la figure ; le « Bravo » et la case en haut à droite en reprennent les nombres
+          let esc = null, ton = false;
+          if (q.type === 'lire') { if (P1 && P2) { esc = vsub(P2, P1); ton = true; } else { esc = q.d; R.escalier(L.esc, q.A, q.d); } }
+          if (q.type === 'points') { esc = q.d; R.escalier(L.esc, q.A, q.d); }
+          if (q.type === 'vecteur') { esc = q.v; R.escalier(L.esc, V(0, 0), q.v); }
+          if (q.type === 'equation' && q.m !== null) { esc = escEntier(q.m); R.escalier(L.esc, pointDe(q.dr), esc); }
+          if (esc) cadrePente(ctx.svg, esc);
+          return { ok: true, msg: q.m === null ? 'Droite verticale : pas de coefficient angulaire.'
+            : q.type === 'equation' ? `<i>m</i> = ${fh(q.m)}. Sur la figure, l’escalier : horizontal ${signedF(esc[0])}, vertical ${signedF(esc[1])}.`
+            : phraseEscalier(esc, ton) };
         }
+        cadrePente(ctx.svg, null);
         const depart = q.type === 'lire' ? (P1 || q.A) : q.type === 'points' ? q.A : q.type === 'vecteur' ? V(0, 0) : pointDe(q.dr);
         montrerReponse(r.vert ? null : r.m, depart);
         let extra = {};
@@ -2595,22 +2652,22 @@ register({
       },
       solve() {
         const steps = [];
-        const reset = () => { if (q.type !== 'lire') q.vu = true; P1 = P2 = null; dessiner(); clear(L.top); return {}; };
-        const fin = m => ({ run: async () => { remplirPente(ctx.q, 'm', m); await wait(300); } });
+        const reset = () => { if (q.type !== 'lire') q.vu = true; P1 = P2 = null; dessiner(); clear(L.top); cadrePente(ctx.svg, null); return {}; };
+        // fin de la correction : la réponse dans la case, et le calcul de m en haut à droite (esc : l'escalier dessiné)
+        const fin = (m, esc) => ({ run: async () => { remplirPente(ctx.q, 'm', m); if (esc) cadrePente(ctx.svg, esc); await wait(300); } });
         if (q.type === 'lire') {
           const A2 = vadd(q.A, q.d);
           steps.push({ say: 'On choisit deux nœuds du quadrillage par lesquels passe la droite.', write: null,
             run: async () => { P1 = q.A; P2 = A2; dessiner(); clear(L.esc); await wait(500); } });
           if (q.m === null) {
             steps.push({ say: 'Pour aller de l’un à l’autre, on n’avance pas horizontalement : la droite est <b>verticale</b>. On ne peut pas diviser par 0 : pas de coefficient angulaire.', write: 'horizontal : 0 → pas de coefficient angulaire',
-              run: async () => { await R.escalierAnim(L.esc, q.A, q.d); remplirPente(ctx.q, 'm', null); } });
+              run: async () => { await R.escalierAnim(L.esc, q.A, q.d); remplirPente(ctx.q, 'm', null); cadrePente(ctx.svg, q.d); } });
             return { reset, steps };
           }
           steps.push({ say: `On compte les carreaux : horizontalement ${fh(q.d[0])}, puis verticalement ${fh(q.d[1])}.`, write: `horizontal : ${fh(q.d[0])} ; vertical : ${fh(q.d[1])}`,
             run: async () => { clear(L.esc); await R.escalierAnim(L.esc, q.A, q.d); } });
-          steps.push({ say: q.d[0].n === 1 ? `Quand on avance de 1, ${montee(q.m)} : c’est le coefficient angulaire.` : `<i>m</i> = vertical ÷ horizontal. Autrement dit : quand on avance de 1, ${montee(q.m)}.`,
-            write: `<i>m</i> = ${quotientHTML(q.d[1], q.d[0])}`,
-            run: async () => { if (q.d[0].n !== 1) await R.escalierAnim(L.esc, A2, escPente(q.m), 700); await fin(q.m).run(); } });
+          steps.push({ say: `<i>m</i> = vertical ÷ horizontal = ${fh(q.d[1])} ÷ ${fh(q.d[0])}.`,
+            write: `<i>m</i> = ${quotientHTML(q.d[1], q.d[0])}`, run: fin(q.m, q.d).run });
           return { reset, steps };
         }
         if (q.type === 'points') {
@@ -2621,8 +2678,8 @@ register({
             run: async () => { const c = vadd(A, [d[0], F(0)]); if (d[1].n) await grow(R.fleche(L.esc, c, c, { cls: 'esc-v', w: 2 }), R.px(c), R.px(B), 900); } });
           steps.push(q.m === null
             ? { say: 'Le déplacement horizontal est nul : la droite est verticale, pas de coefficient angulaire.', write: 'pas de coefficient angulaire', run: fin(null).run }
-            : { say: `<i>m</i> = vertical ÷ horizontal : quand on avance de 1, ${montee(q.m)}.`, write: `<i>m</i> = ${quotientHTML(d[1], d[0])}`,
-              run: async () => { clear(L.esc); R.escalier(L.esc, A, d); await fin(q.m).run(); } });
+            : { say: `<i>m</i> = vertical ÷ horizontal = ${fh(d[1])} ÷ ${fp(d[0])}.`, write: `<i>m</i> = ${quotientHTML(d[1], d[0])}`,
+              run: async () => { clear(L.esc); R.escalier(L.esc, A, d); await fin(q.m, d).run(); } });
           return { reset, steps };
         }
         if (q.type === 'vecteur') {
@@ -2631,7 +2688,7 @@ register({
             run: async () => { await R.escalierAnim(L.esc, O, q.v); } });
           steps.push(q.m === null
             ? { say: 'La 1<sup>re</sup> composante est nulle : droite verticale, pas de coefficient angulaire.', write: 'pas de coefficient angulaire', run: fin(null).run }
-            : { say: '<i>m</i> = 2<sup>e</sup> composante ÷ 1<sup>re</sup> composante.', write: `<i>m</i> = ${quotientHTML(q.v[1], q.v[0])}`, run: fin(q.m).run });
+            : { say: '<i>m</i> = 2<sup>e</sup> composante ÷ 1<sup>re</sup> composante.', write: `<i>m</i> = ${quotientHTML(q.v[1], q.v[0])}`, run: fin(q.m, q.v).run });
           return { reset, steps };
         }
         // équation
