@@ -503,14 +503,27 @@ body.corrige .clavier-eq, body.corrige .clav-bouton { display: none; }
 .choix.rel button { padding: 6px 10px; font-size: 14px; }
 .choix.garde { opacity: .9; }
 .choix.garde button { cursor: default; }
-/* « Lesquelles ? » : une ligne par droite */
-.famille { flex-basis: 100%; display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
-.fam-l { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.fam-eq { font-size: 18px; white-space: nowrap; }
-.fam-l { flex-wrap: nowrap; }
-.fam-eq { overflow-x: auto; }
-.choix.rel.court button { padding: 4px 9px; font-size: 13px; }
-.choix.rel.court button[data-v="par"], .choix.rel.court button[data-v="perp"] { font-size: 17px; padding: 1px 11px; }
+/* « Lesquelles ? » : une grille, les équations dans une colonne, les trois boutons (∥, ⊥, ni) de même largeur dans l'autre */
+.famille { flex-basis: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; align-items: center; margin-top: 6px; }
+.fam-l { display: contents; }
+.fam-eq { font-size: 17px; white-space: nowrap; overflow-x: auto; }
+.choix.rel.court button { width: 42px; padding: 4px 0; text-align: center; font-size: 17px; white-space: nowrap; }
+.choix.rel.court button[data-v="ni"] { font-size: 14px; }
+/* la droite de départ : un encadré dans l'énoncé, un trait épais avec un halo sur la figure */
+.depart-q { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: #EEF1F4; border-left: 4px solid #3B5C76; border-radius: 8px; padding: 4px 10px; }
+.dep-tag { font: 700 10.5px var(--ui); letter-spacing: .05em; text-transform: uppercase; color: #3B5C76; white-space: nowrap; }
+.fig .drt.depart .drt-l { stroke-width: 4; filter: drop-shadow(0 0 3px rgba(59, 92, 118, .55)); }
+.fig .drt.depart .nom-drt { font-size: 21px; }
+/* correction de « Lesquelles ? » : les droites déjà traitées s'estompent */
+.fig .drt.passe { opacity: .22; transition: opacity .5s; }
+/* Explorer de l'onglet 2 : l'escalier de d (ardoise) et celui de d′ (framboise) */
+.fig .esc.esc1 .arr { --c: #3B5C76; }
+.fig .esc.esc1 .esc-nb { fill: #3B5C76; }
+.fig .esc.esc2 .arr { --c: #A00058; }
+.fig .esc.esc2 .esc-nb { fill: #A00058; }
+.cadre-m .cm-calc + .cm-calc { margin-top: 2px; }
+.cadre-m .cm-pas { font: 600 12px var(--ui); }
 @media (max-width: 560px) { .clavier-eq { gap: 3px; } .clavier-eq .touche { min-height: 34px; font-size: 15px; } }
 /* signes des équations : un peu d'air autour de + et − */
 .question .op, .live .op, .stepbar .op, .fb .op { margin: 0 .24em; }
@@ -2367,7 +2380,7 @@ const pentePerp = m => m === null ? F(0) : fzero(m) ? null : fneg(fdiv(F(1), m))
 // une droite de pente m (null : verticale) passant par P
 const drPar = (P, m) => m === null ? drVerticale(P[0]) : drPente(P, m);
 // le choix parallèles / perpendiculaires / ni l'un ni l'autre
-const choixRel = (k, q, court) => `<span class="choix rel${court ? ' court' : ''}" data-k="${k}" role="group" aria-label="${q}"><button type="button" data-v="par" title="parallèles">${court ? '∥' : '∥ parallèles'}</button><button type="button" data-v="perp" title="perpendiculaires">${court ? '⊥' : '⊥ perpendiculaires'}</button><button type="button" data-v="ni" title="ni l’un ni l’autre">${court ? 'ni l’un ni l’autre' : 'ni l’un ni l’autre'}</button></span>`;
+const choixRel = (k, q, court) => `<span class="choix rel${court ? ' court' : ''}" data-k="${k}" role="group" aria-label="${q}"><button type="button" data-v="par" title="parallèles">${court ? '∥' : '∥ parallèles'}</button><button type="button" data-v="perp" title="perpendiculaires">${court ? '⊥' : '⊥ perpendiculaires'}</button><button type="button" data-v="ni" title="ni l’un ni l’autre">${court ? 'ni' : 'ni l’un ni l’autre'}</button></span>`;
 const relDe = (u, v) => estParallele(u, v) ? 'par' : estPerp(u, v) ? 'perp' : 'ni';
 const NOM_REL = { par: 'parallèles', perp: 'perpendiculaires', ni: 'ni parallèles, ni perpendiculaires' };
 // le choix juste est gardé (on ne peut plus le changer)
@@ -2400,15 +2413,36 @@ function quotientHTML(n, d) {
   return memeEcriture ? q : `${q} = ${fh(m)}`;
 }
 // la case du calcul de m, figée en haut à droite de la figure (d : l'escalier [horizontal, vertical] ; null : l'enlever)
-function cadrePente(svg, d) {
+function cadreFig(svg, html) {
   const fig = svg.parentNode; if (!fig) return;
   let c = fig.querySelector('.cadre-m');
-  if (!d) { if (c) c.remove(); return; }
+  if (!html) { if (c) c.remove(); return; }
   if (!c) { c = document.createElement('div'); c.className = 'cadre-m'; fig.appendChild(c); }
-  const mots = '<span class="fr cm-mots"><span>vertical</span><span>horizontal</span></span>';
-  c.innerHTML = fzero(d[0])
+  c.innerHTML = html;
+}
+const MOTS_PENTE = '<span class="fr cm-mots"><span>vertical</span><span>horizontal</span></span>';
+function cadrePente(svg, d) {
+  if (!d) return cadreFig(svg, null);
+  const mots = MOTS_PENTE;
+  cadreFig(svg, fzero(d[0])
     ? `<div class="cm-calc"><i>m</i> = ${mots} = <span class="fr"><span>${fh(d[1])}</span><span>0</span></span></div><div class="cm-sous">On ne peut pas diviser par 0 :<br><b>pas de coefficient angulaire</b>.</div>`
-    : `<div class="cm-calc"><i>m</i> = ${mots} = ${quotientHTML(d[1], d[0])}</div>`;
+    : `<div class="cm-calc"><i>m</i> = ${mots} = ${quotientHTML(d[1], d[0])}</div>`);
+}
+// les étapes du calcul de la pente d'une droite donnée par une écriture (corrections des onglets 2 et 3) :
+//   y = mx + p : on lit m directement ; sinon on passe d'abord les termes d'un côté (ax + by + c = 0), puis m = −a/b.
+//   nom : le nom de la droite (HTML) ; fin : le run de la dernière étape ; apres : phrase ajoutée à la dernière étape
+function etapesPente(ec, dr, nom, fin, apres = '') {
+  const m = penteDe(dr), pre = nom ? `${nom} : ` : '', de = nom ? ` de ${nom}` : '';
+  if (ec.forme === 'reduite') return [{ say: `L’équation${de} est sous la forme <i>y</i> = <i>mx</i> + <i>p</i> : on lit <i>m</i> directement, c’est le nombre devant <i>x</i>.${apres}`,
+    write: `${pre}${ec.html} &nbsp;→&nbsp; <i>m</i> = ${fh(m)}`, run: fin }];
+  const L = versStd(ec).map((l, i) => ({ say: (i ? '' : `On ramène l’équation${de} à la forme <i>ax</i> + <i>by</i> + <i>c</i> = 0. `) + l.say, write: pre + l.write, run: () => wait(400) }));
+  const { a, b } = coefsLus(ec);
+  L.push(b.n
+    ? { say: `On lit <i>a</i> (devant <i>x</i>) et <i>b</i> (devant <i>y</i>), avec leur signe : <i>m</i> = −<i>a</i>/<i>b</i>.${apres}`,
+        write: `${pre}<i>a</i> = ${fh(a)}, <i>b</i> = ${fh(b)}, <i>m</i> = −<i>a</i>/<i>b</i> = ${quotientHTML(fneg(a), b)}`, run: fin }
+    : { say: `<i>b</i> = 0 : on ne peut pas diviser par 0, la droite est verticale (pas de coefficient angulaire).${apres}`,
+        write: `${pre}<i>b</i> = 0 : pas de coefficient angulaire`, run: fin });
+  return L;
 }
 // la phrase du « Bravo » : l'escalier dessiné (ses nombres sont sur la figure), puis le calcul
 const phraseEscalier = (d, ton) => fzero(d[0])
@@ -2716,10 +2750,10 @@ register({
    même coefficient angulaire ; perpendiculaires : l'escalier tourne d'un quart de tour, m′ = −1/m
    ===================================================================== */
 // l'escalier (vecteur w) de la droite, posé en P, tourne d'un quart de tour (sens inverse des aiguilles)
-async function quartDeTour(R, layer, P, w, ms = 1300) {
+async function quartDeTour(R, layer, P, w, ms = 1300, sens = 1) {
   const a = R.fleche(layer, P, vadd(P, w), { color: COL_D2, w: 2.6 }), [x, y] = vnum(w);
   await wait(300);
-  await tween(ms, t => { const th = t * Math.PI / 2; a.set(R.px(P), R.px([num(P[0]) + x * Math.cos(th) - y * Math.sin(th), num(P[1]) + x * Math.sin(th) + y * Math.cos(th)])); });
+  await tween(ms, t => { const th = sens * t * Math.PI / 2; a.set(R.px(P), R.px([num(P[0]) + x * Math.cos(th) - y * Math.sin(th), num(P[1]) + x * Math.sin(th) + y * Math.cos(th)])); });
   return a;
 }
 // l'escalier de d glisse de A jusqu'à P (copie)
@@ -2730,6 +2764,10 @@ async function glisserEscalier(R, layer, A, P, w, ms = 1000) {
 }
 const escDe = m => m === null ? V(0, 1) : escEntier(m);           // escalier entier d'une pente (verticale : (0 ; 1))
 const qTour = w => V(fneg(w[1]), w[0]);                            // (x ; y) → (−y ; x)
+// le quart de tour qui garde un escalier vers la droite (horizontal positif) : (−y ; x) ou (y ; −x)
+const quartPositif = w => { const r = qTour(w); return num(r[0]) < 0 || (fzero(r[0]) && num(r[1]) < 0) ? { w: V(w[1], fneg(w[0])), sens: -1 } : { w: r, sens: 1 }; };
+// couleurs des cinq droites de « Lesquelles ? »
+const COLS_FAM = ['#007C74', '#EC6708', '#8A6D1D', '#A00058', '#5B4B8A'];
 
 register({
   id: 'd2', title: 'Droites parallèles et perpendiculaires', short: 'Parallèles et perpendiculaires',
@@ -2743,8 +2781,8 @@ register({
     'Calcule les deux coefficients angulaires, puis compare-les.'
       + '<span class="warn">Parallèles : même <i>m</i>. Perpendiculaires : <i>m</i>′ = −1/<i>m</i>. La figure apparaît après ta réponse.</span>',
     'Calcule le coefficient angulaire de <b>d</b>, puis celui d’une parallèle et celui d’une perpendiculaire à <b>d</b>.'
-      + '<span class="warn">Tes droites seront tracées par le point P. Fractions avec / (ex. <b>−2/3</b>).</span>',
-    'Chaque droite est-elle parallèle à <b>d</b> (∥), perpendiculaire à <b>d</b> (⊥), ou ni l’un ni l’autre ? Les droites apparaissent après ta réponse.'
+      + '<span class="warn">Tes droites seront tracées sur la figure, par le point P. Fractions avec / (ex. <b>−2/3</b>).</span>',
+    'Chaque droite est-elle parallèle à <b>d</b> (∥), perpendiculaire à <b>d</b> (⊥), ou ni l’un ni l’autre (<b>ni</b>) ? Les droites apparaissent après ta réponse.'
   ][lv],
 
   create(ctx) {
@@ -2771,30 +2809,35 @@ register({
     function maj(anime) {
       ctx.q.querySelectorAll('.sous-modes button').forEach(b => b.classList.toggle('on', b.dataset.m === X.mode));
       const { A, B, Q, mode } = X, pareil = veq(A, B), d = pareil ? null : drPoints(A, B), w = vsub(B, A);
-      const m = mX(), m2 = pareil ? null : mode === 'par' ? m : pentePerp(fzero(w[0]) ? null : m);
-      const d2 = d ? (mode === 'par' ? drPar(Q, fzero(w[0]) ? null : m) : drPar(Q, m2)) : null;
+      // l'escalier de d (de A à B), puis celui de d′ : le même (parallèle) ou tourné d'un quart de tour (perpendiculaire)
+      const t = mode === 'perp' ? quartPositif(w) : { w, sens: 1 }, w2 = t.w;
+      const m = mX(), m2 = pareil || fzero(w2[0]) ? null : fdiv(w2[1], w2[0]);
+      const d2 = d ? drPar(Q, m2) : null;
       let h = '';
       if (pareil) h = '<div>A et B sont confondus : il faut deux points différents.</div>';
-      else {
-        h += `<div class="gros">d : ${fzero(w[0]) ? 'verticale, pas de coefficient angulaire' : `<i>m</i> = ${fh(m)}`}</div>`;
-        h += `<div>${mode === 'par' ? 'Parallèle' : 'Perpendiculaire'} par Q : ${m2 === null || (mode === 'par' && fzero(w[0])) ? 'verticale, pas de coefficient angulaire' : `<i>m</i>′ = ${fh(m2)}`}</div>`;
-        if (mode === 'par') h += '<div>Parallèles : <b>même</b> coefficient angulaire.</div>';
-        else if (m && !fzero(m)) h += `<div>Quart de tour : ${cvF(escDe(m))} → ${cvF(qTour(escDe(m)))}, <i>m</i>′ = −1/<i>m</i> ; <i>m</i> · <i>m</i>′ = <b>−1</b>.</div>`;
-        else h += '<div>Une horizontale et une verticale sont perpendiculaires : l’une n’a pas de coefficient angulaire.</div>';
-      }
+      else if (mode === 'par') h = '<div>Parallèle : l’escalier glisse jusqu’à Q <b>sans tourner</b>. Même escalier, donc <b>même</b> coefficient angulaire.</div>';
+      else if (m && !fzero(m)) h = `<div>Perpendiculaire : l’escalier tourne d’un quart de tour, ${cvF(w)} → ${cvF(w2)}. Les deux nombres s’échangent et un signe change : <i>m</i>′ est l’<b>inverse</b> et l’<b>opposé</b> de <i>m</i>.</div>`;
+      else h = '<div>Une horizontale et une verticale sont perpendiculaires : l’une n’a pas de coefficient angulaire.</div>';
       document.getElementById('live').innerHTML = h;
+      // m et m′ en grand, en haut à droite de la figure, lus sur les deux escaliers
+      const ligneM = (nm, ww, col) => `<div class="cm-calc" style="color:${col}">${nm} = ${fzero(ww[0]) ? `<span class="fr"><span>${fh(ww[1])}</span><span>0</span></span> <span class="cm-pas">pas de coefficient angulaire</span>` : quotientHTML(ww[1], ww[0])}</div>`;
+      cadreFig(ctx.svg, pareil ? null : ligneM('<i>m</i>', w, COL_D) + ligneM('<i>m</i>′', w2, COL_D2)
+        + `<div class="cm-sous">${mode === 'par' ? 'même coefficient angulaire' : m && !fzero(m) ? `<i>m</i> · <i>m</i>′ = ${fh(m)} · ${fp(m2)} = −1` : 'une horizontale et une verticale'}</div>`);
       cancelAnim();
       clear(L.aide, L.dr, L.esc, L.pts, L.top, L.poi);
       if (d) tracerDroite(R, L.dr, d, { color: COL_D, nom: 'd' });
       const dessinerD2 = () => {
-        if (d2) { tracerDroite(R, L.dr, d2, { color: COL_D2, nom: mode === 'par' ? 'd′ ∥ d' : 'd′ ⊥ d', ou: .14 }); if (mode === 'perp') { const I = interDr(d, d2); if (I && R.inside(I, 0)) R.angleDroit(L.aide, I, dirDe(d), dirDe(d2)); } }
+        if (!d2) return;
+        tracerDroite(R, L.dr, d2, { color: COL_D2, nom: mode === 'par' ? 'd′ ∥ d' : 'd′ ⊥ d', ou: .14 });
+        if (mode === 'perp') { const I = interDr(d, d2); if (I && R.inside(I, 0)) R.angleDroit(L.aide, I, dirDe(d), dirDe(d2)); }
+        R.escalier(L.esc, Q, w2, { cls: 'esc2' });
       };
-      if (d) R.escalier(L.esc, A, w, { cls: 'sans-nb' });
-      R.point(L.pts, A, 'A'); R.point(L.pts, B, 'B'); R.point(L.pts, Q, 'Q');
+      if (d) R.escalier(L.esc, A, w, { cls: 'esc1' });
+      R.point(L.pts, A, 'A', { esc: [A, w] }); R.point(L.pts, B, 'B'); R.point(L.pts, Q, 'Q', { esc: [Q, w2] });
       anneau(R, L.poi, A, COL_D); anneau(R, L.poi, B, COL_D); anneau(R, L.poi, Q, COL_D2);
       if (d && anime) play(async () => {
         const a = await glisserEscalier(R, L.top, A, Q, w, 800);
-        if (mode === 'perp') { a.remove(); await quartDeTour(R, L.top, Q, w, 1000); }
+        if (mode === 'perp') { a.remove(); const b = await quartDeTour(R, L.top, Q, w, 1000, t.sens); b.remove(); } else a.remove();
         dessinerD2();
       });
       else dessinerD2();
@@ -2850,11 +2893,11 @@ register({
       if (q.type === 'comparer') h = `<span class="pts eqs">${nomDr('d<sub>1</sub>')}${q.e1.html}<br>${nomDr('d<sub>2</sub>')}${q.e2.html}</span>`
         + ligneQ('<i>m</i><sub>1</sub> =', champPente('m1', 'coefficient angulaire de d1')) + ligneQ('<i>m</i><sub>2</sub> =', champPente('m2', 'coefficient angulaire de d2'))
         + ligneQ(choixRel('c', 'Les droites sont…'));
-      else if (q.type === 'construire') h = `<span class="pts eqs">${nomDr('d')}${q.e.html} &nbsp; P${coordF(q.P)}</span>`
+      else if (q.type === 'construire') h = `<span class="pts eqs">${nomDr('d')}${q.e.html}</span>`
         + ligneQ('<i>m</i> de d :', champPente('m', 'coefficient angulaire de d'))
         + ligneQ('parallèle : <i>m</i> =', champPente('mpar', 'coefficient angulaire d’une parallèle'))
         + ligneQ('perpendiculaire : <i>m</i> =', champPente('mperp', 'coefficient angulaire d’une perpendiculaire'));
-      else h = `<span class="pts eqs">${nomDr('d')}${q.e.html}</span><span class="famille">` + q.lignes.map(l =>
+      else h = `<span class="pts eqs depart-q"><span>${nomDr('d')}${q.e.html}</span><span class="dep-tag">droite de départ</span></span><span class="famille">` + q.lignes.map(l =>
         `<span class="fam-l"><span class="fam-eq">${nomDr(l.nom)}${l.e.html}</span>${choixRel(l.nom, 'La droite ' + l.nom + ' et d sont…', true)}</span>`).join('') + '</span>';
       ctx.q.innerHTML = h;
       activerPentes(ctx.q); activerChoix(ctx.q);
@@ -2866,22 +2909,24 @@ register({
       if (q.type !== 'construire' && !q.vu) { R.base(); R.voile('Calcule d’abord : la figure apparaîtra quand tu vérifies.'); return; }
       R.devoile(); R.base();
       if (q.type === 'comparer') {
+        if (q.corr) return;                    // correction : chaque droite est tracée à son étape
         tracerDroite(R, L.dr, q.d1, { color: COL_D, nom: 'd₁' });
         tracerDroite(R, L.dr, q.d2, { color: COL_D2, nom: 'd₂', ou: .14 });
         marqueAngle(R, L.aide, q.d1, q.d2);
       } else if (q.type === 'construire') {
         tracerDroite(R, L.dr, q.d, { color: COL_D, nom: 'd' });
-        R.point(L.pts, q.P, 'P' + coordTxtD(q.P));
+        R.point(L.pts, q.P, 'P');
         if (rep) rep.forEach(({ m, ok, nom }) => {
           const dd = drPar(q.P, m);
           tracerDroite(R, L.top, dd, { cls: ok ? 'juste' : 'faux', nom, ou: .18 });
           marqueAngle(R, L.aide, q.d, dd);
         });
       } else {
-        tracerDroite(R, L.dr, q.d, { color: COL_D, nom: 'd', cls: 'epais' });
+        if (q.corr) return;                    // correction : chaque droite est tracée à son étape
+        tracerDroite(R, L.dr, q.d, { color: COL_D, nom: 'd', cls: 'depart' });
         q.lignes.forEach((l, i) => {
           const faux = rep && rep[l.nom] === false;
-          tracerDroite(R, L.top, l.dr, { color: ['#007C74', '#EC6708', '#8A6D1D', '#A00058', '#5B4B8A'][i], nom: l.nom, cls: faux ? 'faux-cat' : '', ou: .1 + .16 * i });
+          tracerDroite(R, L.top, l.dr, { color: COLS_FAM[i], nom: l.nom, cls: faux ? 'faux-cat' : '', ou: .1 + .16 * i });
           if (l.rel === 'perp') { const I = interDr(q.d, l.dr); if (I && R.inside(I, 0)) R.angleDroit(L.aide, I, dirDe(q.d), dirDe(l.dr)); }
           else if (faux) marqueAngle(R, L.aide, q.d, l.dr);
         });
@@ -2963,21 +3008,29 @@ register({
       },
       solve() {
         const steps = [];
-        const reset = () => { if (q.type !== 'construire') q.vu = true; dessiner(); return {}; };
+        const reset = () => { if (q.type !== 'construire') { q.vu = true; q.corr = { g: [] }; } dessiner(); return {}; };
         if (q.type === 'comparer') {
-          steps.push({ say: 'Le coefficient angulaire de d<sub>1</sub>.', write: `d<sub>1</sub> : ${calculPente(q.e1, q.d1)}`, run: async () => { remplirPente(ctx.q, 'm1', q.m1); if (q.m1 !== null) await R.escalierAnim(L.esc, pointDe(q.d1), escDe(q.m1), 700); } });
-          steps.push({ say: 'Le coefficient angulaire de d<sub>2</sub>.', write: `d<sub>2</sub> : ${calculPente(q.e2, q.d2)}`, run: async () => { remplirPente(ctx.q, 'm2', q.m2); if (q.m2 !== null) await R.escalierAnim(L.esc, pointDe(q.d2), escDe(q.m2), 700); } });
+          // chaque droite est tracée au moment où on calcule sa pente
+          steps.push(...etapesPente(q.e1, q.d1, 'd<sub>1</sub>', async () => {
+            remplirPente(ctx.q, 'm1', q.m1); tracerDroite(R, L.dr, q.d1, { color: COL_D, nom: 'd₁' });
+            if (q.m1 !== null) await R.escalierAnim(L.esc, pointDe(q.d1), escDe(q.m1), 700); else await wait(300);
+          }));
+          steps.push(...etapesPente(q.e2, q.d2, 'd<sub>2</sub>', async () => {
+            remplirPente(ctx.q, 'm2', q.m2); tracerDroite(R, L.dr, q.d2, { color: COL_D2, nom: 'd₂', ou: .14 });
+            if (q.m2 !== null) await R.escalierAnim(L.esc, pointDe(q.d2), escDe(q.m2), 700); else await wait(300);
+          }));
           steps.push({ say: pisteRel(q.m1, q.m2, q.rel), write: q.rel === 'par' ? `<i>m</i><sub>1</sub> = <i>m</i><sub>2</sub> : parallèles` : q.rel === 'perp' ? (q.m1 !== null && q.m2 !== null ? `${fh(q.m1)} · ${fp(q.m2)} = −1 : perpendiculaires` : 'horizontale et verticale : perpendiculaires') : 'ni parallèles, ni perpendiculaires',
             run: async () => {
               choisir(ctx.q, 'c', q.rel);
               if (q.rel === 'perp' && q.m1 !== null) { clear(L.esc); await quartDeTour(R, L.esc, interDr(q.d1, q.d2) || pointDe(q.d1), escDe(q.m1)); }
               else await wait(400);
+              marqueAngle(R, L.aide, q.d1, q.d2);
             } });
           return { reset, steps };
         }
         if (q.type === 'construire') {
           const P = q.P, w = escDe(q.m);
-          steps.push({ say: 'Le coefficient angulaire de d.', write: calculPente(q.e, q.d), run: async () => { remplirPente(ctx.q, 'm', q.m); await R.escalierAnim(L.esc, pointDe(q.d), w, 700); } });
+          steps.push(...etapesPente(q.e, q.d, 'd', async () => { remplirPente(ctx.q, 'm', q.m); await R.escalierAnim(L.esc, pointDe(q.d), w, 700); }));
           steps.push({ say: 'Une parallèle a le même coefficient angulaire : l’escalier glisse jusqu’à P sans tourner.', write: `parallèle : ${penteHTML(q.mpar)}`,
             run: async () => { clear(L.esc); await glisserEscalier(R, L.esc, pointDe(q.d), P, w); tracerDroite(R, L.top, drPar(P, q.mpar), { cls: 'juste', nom: 'parallèle', ou: .18 }); remplirPente(ctx.q, 'mpar', q.mpar); } });
           steps.push({ say: q.m === null ? 'd est verticale : sa perpendiculaire est horizontale, <i>m</i> = 0.' : fzero(q.m) ? 'd est horizontale : sa perpendiculaire est verticale, pas de coefficient angulaire.'
@@ -2991,12 +3044,29 @@ register({
             } });
           return { reset, steps };
         }
-        steps.push({ say: 'D’abord, le coefficient angulaire de d.', write: `d : ${calculPente(q.e, q.d)}`, run: () => wait(400) });
-        q.lignes.forEach(l => steps.push({
-          say: `La droite ${l.nom} : ${l.rel === 'par' ? 'même coefficient angulaire que d, elle est parallèle.' : l.rel === 'perp' ? 'coefficient inverse et opposé, elle est perpendiculaire.' : 'ni le même coefficient, ni l’inverse et opposé.'}`,
-          write: `${l.nom} : ${calculPente(l.e, l.dr)} → ${l.rel === 'par' ? '∥ d' : l.rel === 'perp' ? '⊥ d' : 'ni l’un ni l’autre'}`,
-          run: async () => { choisir(ctx.q, l.nom, l.rel); await wait(400); }
-        }));
+        // « Lesquelles ? » : d d'abord (mise en évidence), puis une droite à la fois ; les précédentes s'estompent
+        steps.push(...etapesPente(q.e, q.d, 'd', async () => {
+          tracerDroite(R, L.dr, q.d, { color: COL_D, nom: 'd', cls: 'depart' });
+          await R.escalierAnim(L.esc, pointDe(q.d), escDe(q.m), 700);
+        }, ' C’est la droite de départ : on compare les cinq autres à elle.'));
+        q.lignes.forEach((l, i) => {
+          const verdict = l.rel === 'par' ? ` Même coefficient angulaire que d : <b>${l.nom} ∥ d</b>.`
+            : l.rel === 'perp' ? ` ${fh(l.m)} est l’inverse et l’opposé de ${fh(q.m)} : <b>${l.nom} ⊥ d</b>.`
+            : ` Ni égal à ${fh(q.m)}, ni son inverse et opposé : ${l.nom} n’est <b>ni parallèle, ni perpendiculaire</b> à d.`;
+          const et = etapesPente(l.e, l.dr, l.nom, async () => {
+            clear(L.esc);
+            q.corr.g.forEach(g => g.classList.add('passe'));
+            const g = tracerDroite(R, L.top, l.dr, { color: COLS_FAM[i], nom: l.nom, ou: .1 + .16 * i });
+            q.corr.g.push(g);
+            const I = interDr(q.d, l.dr);
+            if (l.rel === 'perp') { if (I && R.inside(I, 0)) R.angleDroit(g, I, dirDe(q.d), dirDe(l.dr)); }
+            else if (l.rel === 'ni') marqueAngle(R, g, q.d, l.dr);
+            choisir(ctx.q, l.nom, l.rel);
+            await wait(400);
+          }, verdict);
+          et[et.length - 1].write += ` &nbsp;→&nbsp; ${l.rel === 'par' ? '∥ d' : l.rel === 'perp' ? '⊥ d' : 'ni l’un ni l’autre'}`;
+          steps.push(...et);
+        });
         return { reset, steps };
       }
     };
